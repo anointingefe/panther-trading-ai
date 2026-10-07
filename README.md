@@ -144,6 +144,24 @@ PANTHER blocks the order and records the journal entry as non-approvable. This
 means a weak or unproven strategy cannot become a paper trade just because the
 latest signal looks confident.
 
+## Candle Intelligence
+
+PANTHER includes a candle intelligence layer inspired by the reviewed candle-box
+video. It reads a higher-timeframe candle as the box and lower-timeframe candles
+as the execution evidence.
+
+The current report includes:
+
+- previous daily high, low, and midpoint
+- latest lower-timeframe position inside the box
+- EMA bias
+- VWAP bias
+- candle patterns such as momentum, engulfing, doji, rejection wick, and inside bar
+- bullish, bearish, or wait confirmation
+
+Implementation notes are captured in
+[VIDEO_REVIEW_2026-10-07.md](docs/VIDEO_REVIEW_2026-10-07.md).
+
 ## Project Layout
 
 ```text

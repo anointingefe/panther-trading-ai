@@ -51,6 +51,23 @@ const fallbackSnapshot = {
     reason: "No strategy is approved by the research lab for this market condition.",
     selectedStrategy: null
   },
+  candleIntelligence: {
+    box: {
+      timeframe: "D1",
+      high: 1.09,
+      low: 1.07,
+      midpoint: 1.08,
+      latest_position: "inside_box",
+      inside_box: true
+    },
+    lower_timeframe: "M5",
+    ema_bias: "neutral",
+    vwap_bias: "neutral",
+    confirmation: "wait",
+    confirmation_score: 0,
+    patterns: [],
+    notes: []
+  },
   journalEntry: null,
   sentiment: {
     score: 0.12,
@@ -140,6 +157,7 @@ function renderDashboard(data) {
   renderApproval(data.journalEntry || null);
   renderPositions(data.positions || []);
   renderResearch(data.research || fallbackSnapshot.research);
+  renderCandleIntelligence(data.candleIntelligence || fallbackSnapshot.candleIntelligence);
 
   const watchlist = document.getElementById("watchlist");
   watchlist.innerHTML = data.watchlist
@@ -161,6 +179,34 @@ function renderDashboard(data) {
   activity.innerHTML = data.activity.map((item) => `<li>${item}</li>`).join("");
 
   renderMarketUniverse(data.markets || []);
+}
+
+function renderCandleIntelligence(report) {
+  const box = report.box || fallbackSnapshot.candleIntelligence.box;
+  setText("candle-confirmation", `${String(report.confirmation || "wait").toUpperCase()} ${pct.format(report.confirmation_score || 0)}`);
+  setText("candle-box-high", Number(box.high).toFixed(5));
+  setText("candle-box-mid", Number(box.midpoint).toFixed(5));
+  setText("candle-box-low", Number(box.low).toFixed(5));
+
+  const patterns = report.patterns || [];
+  const notes = report.notes || [];
+  const patternList = document.getElementById("pattern-list");
+  if (!patterns.length && !notes.length) {
+    patternList.innerHTML = `<p class="empty-state">No candle intelligence yet.</p>`;
+    return;
+  }
+
+  patternList.innerHTML = [
+    ...patterns.slice(0, 4).map(
+      (pattern) => `
+        <div class="pattern-row">
+          <strong>${pattern.name.replaceAll("_", " ")}</strong>
+          <span>${pattern.direction} / ${pct.format(pattern.strength || 0)}</span>
+        </div>
+      `
+    ),
+    ...notes.slice(0, 3).map((note) => `<p class="candle-note">${note}</p>`)
+  ].join("");
 }
 
 function renderStrategyGate(gate) {

@@ -6,6 +6,7 @@ from typing import Any
 
 from panther_trading.cli import run_once_command
 from panther_trading.brokers import create_broker
+from panther_trading.candles import CandleIntelligenceEngine
 from panther_trading.config import load_config
 from panther_trading.data.markets import default_watchlist, market_universe
 from panther_trading.journal import TradeJournal
@@ -31,16 +32,23 @@ def build_dashboard_snapshot(
     signal = result["signal"]
     order = result["order"]
     active_symbol = active_symbol or result["symbol"]
+    simulator = create_broker("simulated")
     broker = broker_status()
     live_readiness = LiveTradingGate(config.execution).readiness(
         broker_status=broker,
         approval_status=None,
         requested_volume=config.execution.default_volume,
     )
-    research = StrategyResearchLab(create_broker("simulated")).run(
+    research = StrategyResearchLab(simulator).run(
         active_symbol,
         timeframe=config.app.timeframe,
         candles=max(config.app.candles, 220),
+    )
+    candle_intelligence = CandleIntelligenceEngine().analyze(
+        higher_candles=simulator.get_candles(active_symbol, "D1", 3),
+        lower_candles=simulator.get_candles(active_symbol, "M5", 80),
+        higher_timeframe="D1",
+        lower_timeframe="M5",
     )
     strategy_gate = StrategyTrustGate().evaluate(research)
     if order.status != OrderStatus.REJECTED and not strategy_gate.allowed:
@@ -70,6 +78,7 @@ def build_dashboard_snapshot(
             "reason": strategy_gate.reason,
             "selectedStrategy": strategy_gate.selected_strategy,
         },
+        "candleIntelligence": _jsonable(candle_intelligence),
         "sentiment": _jsonable(result["sentiment"]),
         "broker": broker,
         "positions": PaperPositionBook(DEFAULT_POSITIONS).open_positions(),
@@ -84,6 +93,7 @@ def build_dashboard_snapshot(
         "watchlist": _build_watchlist(signal),
         "activity": [
             "Collected latest market candles",
+            f"Candle confirmation: {candle_intelligence.confirmation} at {candle_intelligence.confirmation_score:.0%}",
             "Blended technical and sentiment score",
             f"Strategy gate: {strategy_gate.reason}",
             f"Risk decision: {order.message}",
