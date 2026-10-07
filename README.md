@@ -76,6 +76,14 @@ The dashboard exposes broker health at:
 
 - `GET /api/broker/status`
 
+Closed MT5 demo history can be synced into the validation ledger from:
+
+- `POST /api/mt5/sync-history`
+
+The sync imports only PANTHER-tagged closed MT5 trades with enough metadata to
+calculate honest R-multiples. Trades without a usable stop-loss are skipped
+because they cannot prove risk-adjusted edge.
+
 Live trading remains blocked by config unless `execution.allow_live_trading` is
 changed deliberately. Keep demo mode until the strategy journal proves itself.
 
@@ -196,7 +204,8 @@ panther_trading/
 ## Next Milestones
 
 1. Connect a real MT5 demo account on Windows/VPS.
-2. Add economic calendar/news ingestion.
-3. Add X API ingestion with strict spend limits.
-4. Build a dashboard with logs, signals, and manual approval.
+2. Run MT5 demo-history sync until the edge-validation gate has real closed
+   trades to evaluate.
+3. Add economic calendar/news ingestion.
+4. Add X API ingestion with strict spend limits.
 5. Backtest strategies before allowing semi-auto execution.

@@ -501,6 +501,18 @@ button:disabled {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.proof-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.proof-actions small {
+  color: var(--muted);
+}
+
 .edge-grid div,
 .research-summary div {
   padding: 0.75rem;

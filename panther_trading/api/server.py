@@ -121,6 +121,29 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/mt5/sync-history":
+            try:
+                payload = self._read_json_body()
+                days = int(payload.get("days", 30))
+                if days < 1 or days > 365:
+                    raise ValueError("History sync days must be between 1 and 365")
+                broker = create_broker("mt5")
+                if not hasattr(broker, "get_closed_trades"):
+                    raise ValueError("Configured broker cannot export closed trades")
+                imported = [
+                    POSITIONS.import_closed_trade(trade)
+                    for trade in broker.get_closed_trades(days=days)  # type: ignore[attr-defined]
+                ]
+                self._send_json(
+                    {
+                        "imported": len(imported),
+                        "positions": imported,
+                        "edgeValidation": self._edge_validation(),
+                    }
+                )
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def log_message(self, format: str, *args: object) -> None:

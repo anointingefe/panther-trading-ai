@@ -66,6 +66,12 @@ returns explicit reasons for every failed threshold. A passing research score
 alone cannot unlock live trading without passing this independent execution
 evidence gate.
 
+MT5 history imports must be audit-grade. A broker history item can count only
+when PANTHER can identify it as a PANTHER-tagged closed trade and reconstruct
+entry, stop-loss, take-profit, close price, realized PnL, and close time. Trades
+without stop-loss metadata are skipped because they cannot be converted into a
+truthful risk-normalized result.
+
 ## Current Build Status
 
 The current build is demo-first and intentionally conservative. The strategy

@@ -91,3 +91,21 @@ class OrderResult:
     status: OrderStatus
     message: str
     broker_order_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ClosedTrade:
+    external_id: str
+    source: str
+    symbol: str
+    side: SignalSide
+    volume: float
+    entry: float
+    stop_loss: float
+    take_profit: float
+    close_price: float
+    pnl: float
+    opened_at: datetime
+    closed_at: datetime
+    broker_order_id: str | None = None
+    comment: str | None = None

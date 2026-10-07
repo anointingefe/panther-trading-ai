@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from panther_trading.brokers.base import Broker
-from panther_trading.models import BrokerStatus, Candle, OrderRequest, OrderResult, OrderStatus, SignalSide
+from panther_trading.models import BrokerStatus, Candle, ClosedTrade, OrderRequest, OrderResult, OrderStatus, SignalSide
+
+
+PANTHER_MAGIC = 26001007
 
 
 class MT5Broker(Broker):
@@ -107,7 +111,7 @@ class MT5Broker(Broker):
                 "sl": request.stop_loss,
                 "tp": request.take_profit,
                 "deviation": 20,
-                "magic": 26001007,
+                "magic": PANTHER_MAGIC,
                 "comment": request.comment,
                 "type_time": self.mt5.ORDER_TIME_GTC,
                 "type_filling": self.mt5.ORDER_FILLING_IOC,
@@ -118,6 +122,36 @@ class MT5Broker(Broker):
         if result.retcode != self.mt5.TRADE_RETCODE_DONE:
             return OrderResult(OrderStatus.REJECTED, f"MT5 rejected order: {result.comment}")
         return OrderResult(OrderStatus.ACCEPTED, result.comment, broker_order_id=str(result.order))
+
+    def get_closed_trades(self, days: int = 30) -> list[ClosedTrade]:
+        """Import auditable PANTHER MT5 history for demo validation.
+
+        Only trades with the PANTHER magic number and enough order metadata to
+        reconstruct entry, stop-loss, take-profit, close price, and realized PnL
+        are returned. Missing stop-loss data is skipped because it cannot be
+        converted into an honest R-multiple.
+        """
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(days=days)
+        deals = self.mt5.history_deals_get(since, now)
+        if deals is None:
+            raise RuntimeError(f"MT5 history_deals_get failed: {self.mt5.last_error()}")
+        orders = self.mt5.history_orders_get(since, now) or ()
+        order_by_ticket = {str(getattr(order, "ticket", "")): order for order in orders}
+
+        grouped: dict[str, list[Any]] = {}
+        for deal in deals:
+            if int(getattr(deal, "magic", 0) or 0) != PANTHER_MAGIC:
+                continue
+            position_id = str(getattr(deal, "position_id", "") or getattr(deal, "order", ""))
+            grouped.setdefault(position_id, []).append(deal)
+
+        closed: list[ClosedTrade] = []
+        for position_id, position_deals in grouped.items():
+            imported = self._closed_trade_from_deals(position_id, position_deals, order_by_ticket)
+            if imported is not None:
+                closed.append(imported)
+        return sorted(closed, key=lambda trade: trade.closed_at)
 
     def _timeframe(self, timeframe: str) -> int:
         mapping = {
@@ -145,3 +179,69 @@ class MT5Broker(Broker):
         if trade_mode == real:
             return "real"
         return "unknown"
+
+    def _closed_trade_from_deals(
+        self, position_id: str, deals: list[Any], order_by_ticket: dict[str, Any]
+    ) -> ClosedTrade | None:
+        entry_codes = {getattr(self.mt5, "DEAL_ENTRY_IN", 0)}
+        exit_codes = {getattr(self.mt5, "DEAL_ENTRY_OUT", 1), getattr(self.mt5, "DEAL_ENTRY_INOUT", 2)}
+        sorted_deals = sorted(deals, key=lambda deal: getattr(deal, "time", 0))
+        entry_deal = next((deal for deal in sorted_deals if getattr(deal, "entry", None) in entry_codes), None)
+        exit_deal = next((deal for deal in reversed(sorted_deals) if getattr(deal, "entry", None) in exit_codes), None)
+        if entry_deal is None or exit_deal is None:
+            return None
+
+        entry_order = order_by_ticket.get(str(getattr(entry_deal, "order", "")))
+        exit_order = order_by_ticket.get(str(getattr(exit_deal, "order", "")))
+        stop_loss = self._first_number(getattr(entry_order, "sl", None), getattr(exit_order, "sl", None))
+        take_profit = self._first_number(getattr(entry_order, "tp", None), getattr(exit_order, "tp", None))
+        if stop_loss is None or take_profit is None:
+            return None
+
+        side = self._deal_side(entry_deal)
+        if side is None:
+            return None
+        entry_price = float(getattr(entry_deal, "price"))
+        if side == SignalSide.BUY and stop_loss >= entry_price:
+            return None
+        if side == SignalSide.SELL and stop_loss <= entry_price:
+            return None
+
+        pnl = sum(
+            float(getattr(deal, field, 0.0) or 0.0)
+            for deal in sorted_deals
+            for field in ("profit", "swap", "commission", "fee")
+        )
+        return ClosedTrade(
+            external_id=position_id,
+            source="mt5",
+            symbol=str(getattr(entry_deal, "symbol")),
+            side=side,
+            volume=float(min(float(getattr(entry_deal, "volume", 0.0)), float(getattr(exit_deal, "volume", 0.0)))),
+            entry=entry_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            close_price=float(getattr(exit_deal, "price")),
+            pnl=round(pnl, 6),
+            opened_at=datetime.fromtimestamp(int(getattr(entry_deal, "time")), tz=timezone.utc),
+            closed_at=datetime.fromtimestamp(int(getattr(exit_deal, "time")), tz=timezone.utc),
+            broker_order_id=str(getattr(exit_deal, "order", "")),
+            comment=str(getattr(entry_deal, "comment", "") or getattr(exit_deal, "comment", "")),
+        )
+
+    def _deal_side(self, deal: Any) -> SignalSide | None:
+        deal_type = getattr(deal, "type", None)
+        if deal_type == getattr(self.mt5, "DEAL_TYPE_BUY", None):
+            return SignalSide.BUY
+        if deal_type == getattr(self.mt5, "DEAL_TYPE_SELL", None):
+            return SignalSide.SELL
+        return None
+
+    def _first_number(self, *values: Any) -> float | None:
+        for value in values:
+            if value is None:
+                continue
+            number = float(value)
+            if number > 0:
+                return number
+        return None

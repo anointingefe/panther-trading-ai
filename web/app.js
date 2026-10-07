@@ -381,6 +381,31 @@ async function emergencyStopPositions() {
   }
 }
 
+async function syncMt5History() {
+  const button = document.getElementById("sync-mt5-history");
+  const status = document.getElementById("sync-mt5-status");
+  button.disabled = true;
+  status.textContent = "Checking MT5 history...";
+  try {
+    const response = await fetch("/api/mt5/sync-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 30 })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "MT5 history sync failed");
+    }
+    renderEdgeValidation(payload.edgeValidation || fallbackSnapshot.edgeValidation);
+    await refreshPositions();
+    status.textContent = `${payload.imported || 0} verified closed MT5 trades imported.`;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "MT5 history sync failed";
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderExecutionMode(executionMode) {
   const demoButton = document.getElementById("demo-mode");
   const liveButton = document.getElementById("live-mode");
@@ -551,6 +576,7 @@ function renderMarketUniverse(markets) {
 document.getElementById("run-scan").addEventListener("click", refreshSnapshot);
 document.getElementById("approve-signal").addEventListener("click", () => submitDecision("approved"));
 document.getElementById("reject-signal").addEventListener("click", () => submitDecision("rejected"));
+document.getElementById("sync-mt5-history").addEventListener("click", syncMt5History);
 document.getElementById("positions-list").addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;

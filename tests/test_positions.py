@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+
+from panther_trading.models import ClosedTrade, SignalSide
 from panther_trading.positions import PaperPositionBook
 
 
@@ -89,3 +92,31 @@ def test_position_book_enforces_total_and_symbol_caps(tmp_path) -> None:
         assert "Maximum open demo positions" in str(exc)
     else:
         raise AssertionError("Total open-position cap should reject a third position")
+
+
+def test_position_book_imports_verified_closed_trade_once(tmp_path) -> None:
+    book = PaperPositionBook(tmp_path / "positions.jsonl")
+    trade = ClosedTrade(
+        external_id="mt5-pos-1",
+        source="mt5",
+        symbol="EURUSD",
+        side=SignalSide.BUY,
+        volume=0.1,
+        entry=1.1,
+        stop_loss=1.09,
+        take_profit=1.12,
+        close_price=1.115,
+        pnl=0.0015,
+        opened_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        closed_at=datetime(2026, 10, 1, 1, tzinfo=timezone.utc),
+        broker_order_id="9002",
+        comment="PANTHER demo trade",
+    )
+
+    first = book.import_closed_trade(trade)
+    second = book.import_closed_trade(trade)
+
+    assert first["id"] == second["id"]
+    assert first["status"] == "closed"
+    assert first["metadata"]["verified"] is True
+    assert len(book.latest()) == 1

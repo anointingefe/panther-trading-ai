@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from panther_trading.models import ClosedTrade
+
 
 @dataclass(frozen=True)
 class PaperPosition:
@@ -116,6 +118,50 @@ class PaperPositionBook:
             closed.append(self.close(position["id"], reason=reason))
         return closed
 
+    def import_closed_trade(self, trade: ClosedTrade) -> dict[str, Any]:
+        if trade.volume <= 0:
+            raise ValueError("Closed trade volume must be greater than zero")
+        if trade.stop_loss == trade.entry:
+            raise ValueError("Closed trade must include a usable stop-loss")
+        side = trade.side.value
+        if side == "buy" and trade.stop_loss >= trade.entry:
+            raise ValueError("Imported buy trades require stop-loss below entry")
+        if side == "sell" and trade.stop_loss <= trade.entry:
+            raise ValueError("Imported sell trades require stop-loss above entry")
+
+        positions = self._read_all()
+        existing = self._find_by_external_id(positions, trade.source, trade.external_id)
+        if existing:
+            return existing
+
+        position = PaperPosition(
+            id=f"pos-{uuid4().hex[:12]}",
+            journal_entry_id=f"{trade.source}:{trade.external_id}",
+            symbol=trade.symbol,
+            side=side,
+            volume=float(trade.volume),
+            entry=float(trade.entry),
+            stop_loss=float(trade.stop_loss),
+            take_profit=float(trade.take_profit),
+            status="closed",
+            opened_at=trade.opened_at.isoformat(),
+            closed_at=trade.closed_at.isoformat(),
+            close_reason=f"{trade.source}_history_import",
+            close_price=float(trade.close_price),
+            pnl=float(trade.pnl),
+            metadata={
+                "source": trade.source,
+                "external_id": trade.external_id,
+                "broker_order_id": trade.broker_order_id,
+                "comment": trade.comment,
+                "verified": True,
+            },
+        )
+        payload = position.__dict__
+        positions.append(payload)
+        self._write_all(positions)
+        return payload
+
     def open_positions(self) -> list[dict[str, Any]]:
         return [position for position in self.latest(limit=500) if position["status"] == "open"]
 
@@ -126,6 +172,15 @@ class PaperPositionBook:
     def _find_by_journal_id(self, positions: list[dict[str, Any]], journal_entry_id: str) -> dict[str, Any] | None:
         for position in positions:
             if position["journal_entry_id"] == journal_entry_id:
+                return position
+        return None
+
+    def _find_by_external_id(
+        self, positions: list[dict[str, Any]], source: str, external_id: str
+    ) -> dict[str, Any] | None:
+        for position in positions:
+            metadata = position.get("metadata") or {}
+            if metadata.get("source") == source and metadata.get("external_id") == external_id:
                 return position
         return None
 
