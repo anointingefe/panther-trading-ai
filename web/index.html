@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PANTHER Trading AI</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Primary">
+        <a class="brand" href="#" aria-label="PANTHER dashboard home">
+          <span class="brand-mark">P</span>
+          <span>
+            <strong>PANTHER</strong>
+            <small>Trading AI</small>
+          </span>
+        </a>
+
+        <nav class="nav-list" aria-label="Dashboard sections">
+          <a class="active" href="#">Command</a>
+          <a href="#">Signals</a>
+          <a href="#">Backtests</a>
+          <a href="#">Risk Rules</a>
+          <a href="#">Broker</a>
+        </nav>
+
+        <section class="guard-card">
+          <span class="status-dot"></span>
+          <p>Live trading locked</p>
+          <strong>Paper mode</strong>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Market command center</p>
+            <h1>Trade only when the evidence is strong.</h1>
+          </div>
+          <div class="topbar-actions">
+            <label class="market-picker">
+              <span>Market</span>
+              <select id="market-select" aria-label="Select market"></select>
+            </label>
+            <div class="mode-toggle" role="group" aria-label="Execution mode">
+              <button class="active" id="demo-mode" type="button">Demo</button>
+              <button id="live-mode" type="button">Live</button>
+            </div>
+            <button class="ghost-button" id="run-scan" type="button">Run Scan</button>
+            <button class="danger-button" id="emergency-stop" type="button">Emergency Stop</button>
+          </div>
+        </header>
+
+        <section class="hero-grid" aria-label="Trading overview">
+          <article class="signal-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Primary signal</p>
+                <h2 id="signal-symbol">EURUSD</h2>
+              </div>
+              <span class="pill" id="mode-pill">Paper</span>
+            </div>
+
+            <div class="signal-readout">
+              <span id="signal-side">SELL</span>
+              <strong id="confidence">25%</strong>
+              <small>confidence</small>
+            </div>
+
+            <div class="price-grid">
+              <div>
+                <span>Entry</span>
+                <strong id="entry">1.08065</strong>
+              </div>
+              <div>
+                <span>Stop Loss</span>
+                <strong id="stop-loss">1.08305</strong>
+              </div>
+              <div>
+                <span>Take Profit</span>
+                <strong id="take-profit">1.07705</strong>
+              </div>
+            </div>
+
+            <div class="risk-banner" id="risk-banner">
+              Signal rejected: confidence below minimum risk threshold.
+            </div>
+            <div class="strategy-banner" id="strategy-banner">
+              Strategy gate waiting for research.
+            </div>
+            <div class="mode-banner" id="mode-banner">
+              Demo mode active. Live execution is locked by backend config.
+            </div>
+          </article>
+
+          <article class="chart-panel" aria-label="Price chart preview">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Market structure</p>
+                <h2>Live Scan</h2>
+              </div>
+              <span class="soft-label">M15</span>
+            </div>
+            <div class="chart">
+              <div class="chart-line"></div>
+              <span class="price-pin">1.0806</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="metrics-grid" aria-label="Account metrics">
+          <article>
+            <span>Equity</span>
+            <strong id="equity">$10,000</strong>
+            <small>Demo balance</small>
+          </article>
+          <article>
+            <span>Daily P/L</span>
+            <strong id="daily-pnl">$0</strong>
+            <small>Loss cap protected</small>
+          </article>
+          <article>
+            <span>Risk Used</span>
+            <strong id="risk-used">0%</strong>
+            <small>Max 3% daily loss</small>
+          </article>
+          <article>
+            <span>Win Rate</span>
+            <strong id="win-rate">0%</strong>
+            <small>Awaiting backtests</small>
+          </article>
+        </section>
+
+        <section class="lower-grid">
+          <article class="approval-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Approval</p>
+                <h2>Manual Trade Gate</h2>
+              </div>
+              <span class="pill" id="approval-status">Waiting</span>
+            </div>
+            <p class="approval-copy" id="approval-copy">
+              Run a scan to create a journaled signal before any decision.
+            </p>
+            <div class="approval-actions">
+              <button class="approve-button" id="approve-signal" type="button">Approve</button>
+              <button class="reject-button" id="reject-signal" type="button">Reject</button>
+            </div>
+          </article>
+
+          <article class="broker-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Broker</p>
+                <h2>Connection Guard</h2>
+              </div>
+              <span class="pill" id="broker-mode">Paper</span>
+            </div>
+            <dl class="broker-status">
+              <div>
+                <dt>Status</dt>
+                <dd id="broker-connection">Connected</dd>
+              </div>
+              <div>
+                <dt>Account</dt>
+                <dd id="broker-account">SIM-0001</dd>
+              </div>
+              <div>
+                <dt>Server</dt>
+                <dd id="broker-server">local-simulator</dd>
+              </div>
+              <div>
+                <dt>Markets</dt>
+                <dd id="broker-symbols">48</dd>
+              </div>
+            </dl>
+            <p class="broker-message" id="broker-message">Safe paper broker active</p>
+          </article>
+
+          <article class="positions-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Execution</p>
+                <h2>Open Demo Trades</h2>
+              </div>
+              <span class="pill" id="positions-count">0 open</span>
+            </div>
+            <div class="positions-list" id="positions-list"></div>
+          </article>
+
+          <article class="live-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Live system</p>
+                <h2>Activation Guard</h2>
+              </div>
+              <span class="pill" id="live-readiness-status">Locked</span>
+            </div>
+            <p class="approval-copy" id="live-readiness-copy">
+              Live trading is built as an inactive system until demo testing proves the strategy.
+            </p>
+            <ul class="readiness-list" id="live-readiness-list"></ul>
+          </article>
+
+          <article class="research-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Research lab</p>
+                <h2>Strategy Scorecards</h2>
+              </div>
+              <span class="pill" id="research-condition">Scanning</span>
+            </div>
+            <div class="research-summary">
+              <div>
+                <span>Approved</span>
+                <strong id="research-approved">0</strong>
+              </div>
+              <div>
+                <span>Watch</span>
+                <strong id="research-watch">0</strong>
+              </div>
+              <div>
+                <span>Best</span>
+                <strong id="research-best">Waiting</strong>
+              </div>
+            </div>
+            <div class="strategy-list" id="strategy-list"></div>
+          </article>
+
+          <article class="market-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">MT5 universe</p>
+                <h2>Accessible Markets</h2>
+              </div>
+            </div>
+            <div class="market-groups" id="market-groups"></div>
+          </article>
+
+          <article class="table-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Watchlist</p>
+                <h2>AI Bias Board</h2>
+              </div>
+            </div>
+            <div class="watchlist" id="watchlist"></div>
+          </article>
+
+          <article class="rationale-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Reasoning</p>
+                <h2>Decision Trace</h2>
+              </div>
+            </div>
+            <ol id="rationale"></ol>
+          </article>
+
+          <article class="activity-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">System log</p>
+                <h2>Latest Activity</h2>
+              </div>
+            </div>
+            <ul id="activity"></ul>
+          </article>
+
+          <article class="journal-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Memory</p>
+                <h2>Trade Journal</h2>
+              </div>
+            </div>
+            <div class="journal-list" id="journal-list"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
