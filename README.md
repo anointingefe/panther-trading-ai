@@ -4,6 +4,10 @@ PANTHER Trading AI is a guarded auto-trading research system. The first build is
 demo-first: it can generate signals, simulate execution, and expose the same
 interfaces we will later use for MetaTrader 5 or other broker adapters.
 
+The project follows the [PANTHER Precision Standard](docs/PRECISION_STANDARD.md):
+every trade path must be measurable, explainable, journaled, and blocked when
+the evidence is weak.
+
 ## What v0.1 Does
 
 - Collects market candles through a broker abstraction.
@@ -110,10 +114,13 @@ and grades each strategy by:
 
 - number of trades tested
 - win rate
-- net R
+- gross net R
+- net R after spread and slippage assumptions
 - average R
 - profit factor
 - max drawdown
+- recent out-of-sample net R
+- precision grade
 - average confidence
 - approval status
 

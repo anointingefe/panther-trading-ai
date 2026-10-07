@@ -200,7 +200,8 @@ function renderResearch(research) {
             <span>Win <strong>${pct.format(card.win_rate)}</strong></span>
             <span>PF <strong>${Number(card.profit_factor).toFixed(2)}</strong></span>
             <span>Net R <strong>${Number(card.net_r).toFixed(2)}</strong></span>
-            <span>DD <strong>${Number(card.max_drawdown_r).toFixed(2)}R</strong></span>
+            <span>OOS <strong>${Number(card.out_of_sample_net_r).toFixed(2)}R</strong></span>
+            <span>Grade <strong>${String(card.precision_grade || "n/a").replaceAll("_", " ")}</strong></span>
           </div>
           <ul>
             ${(card.notes || []).map((note) => `<li>${note}</li>`).join("")}

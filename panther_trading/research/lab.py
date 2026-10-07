@@ -34,10 +34,15 @@ class StrategyScorecard:
     losses: int
     win_rate: float
     net_r: float
+    gross_net_r: float
+    execution_cost_r: float
     average_r: float
     profit_factor: float
     max_drawdown_r: float
+    out_of_sample_trades: int
+    out_of_sample_net_r: float
     average_confidence: float
+    precision_grade: str
     notes: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,9 +50,19 @@ class StrategyScorecard:
 
 
 class StrategyResearchLab:
-    def __init__(self, broker: Broker, sentiment_collector: StaticSentimentCollector | None = None) -> None:
+    def __init__(
+        self,
+        broker: Broker,
+        sentiment_collector: StaticSentimentCollector | None = None,
+        spread_cost_r: float = 0.05,
+        slippage_cost_r: float = 0.03,
+        out_of_sample_ratio: float = 0.3,
+    ) -> None:
         self.broker = broker
         self.sentiment_collector = sentiment_collector or StaticSentimentCollector()
+        self.spread_cost_r = spread_cost_r
+        self.slippage_cost_r = slippage_cost_r
+        self.out_of_sample_ratio = out_of_sample_ratio
 
     def run(self, symbol: str, timeframe: str = "M15", candles: int = 220) -> dict[str, Any]:
         market_candles = self.broker.get_candles(symbol, timeframe, candles)
@@ -61,6 +76,12 @@ class StrategyResearchLab:
             "symbol": symbol,
             "timeframe": timeframe,
             "marketCondition": condition,
+            "precisionProfile": {
+                "spreadCostR": self.spread_cost_r,
+                "slippageCostR": self.slippage_cost_r,
+                "outOfSampleRatio": self.out_of_sample_ratio,
+                "rule": "Strategies must survive execution costs and recent out-of-sample scoring.",
+            },
             "scorecards": [scorecard.to_dict() for scorecard in scorecards],
             "summary": self._summary(scorecards),
         }
@@ -101,7 +122,9 @@ class StrategyResearchLab:
         horizon = 12
         step = 4
         trade_results: list[float] = []
+        gross_results: list[float] = []
         confidences: list[float] = []
+        execution_cost = self.spread_cost_r + self.slippage_cost_r
 
         start = candidate.config.slow_sma
         stop = max(start, len(candles) - horizon)
@@ -112,22 +135,35 @@ class StrategyResearchLab:
             outcome = self._score_trade(signal, candles[index : index + horizon])
             if outcome is None:
                 continue
-            trade_results.append(outcome)
+            gross_results.append(outcome)
+            trade_results.append(round(outcome - execution_cost, 4))
             confidences.append(signal.confidence)
 
         wins = len([result for result in trade_results if result > 0])
         losses = len([result for result in trade_results if result < 0])
         net_r = round(sum(trade_results), 2)
+        gross_net_r = round(sum(gross_results), 2)
         positive_r = sum(result for result in trade_results if result > 0)
         negative_r = abs(sum(result for result in trade_results if result < 0))
         trades = wins + losses
+        out_of_sample = self._out_of_sample_results(trade_results)
+        out_of_sample_net_r = round(sum(out_of_sample), 2)
         win_rate = round(wins / trades, 4) if trades else 0.0
         average_r = round(net_r / trades, 4) if trades else 0.0
         profit_factor = round(positive_r / negative_r, 4) if negative_r else round(positive_r, 4)
         max_drawdown = self._max_drawdown(trade_results)
         average_confidence = round(fmean(confidences), 4) if confidences else 0.0
-        status = self._status(candidate, trades, profit_factor, max_drawdown, net_r)
-        notes = self._notes(candidate, trades, profit_factor, max_drawdown, net_r, market_condition)
+        precision_grade = self._precision_grade(trades, profit_factor, max_drawdown, net_r, out_of_sample_net_r)
+        status = self._status(candidate, trades, profit_factor, max_drawdown, net_r, out_of_sample_net_r)
+        notes = self._notes(
+            candidate,
+            trades,
+            profit_factor,
+            max_drawdown,
+            net_r,
+            out_of_sample_net_r,
+            market_condition,
+        )
 
         return StrategyScorecard(
             id=candidate.id,
@@ -140,10 +176,15 @@ class StrategyResearchLab:
             losses=losses,
             win_rate=win_rate,
             net_r=net_r,
+            gross_net_r=gross_net_r,
+            execution_cost_r=round(execution_cost, 4),
             average_r=average_r,
             profit_factor=profit_factor,
             max_drawdown_r=max_drawdown,
+            out_of_sample_trades=len(out_of_sample),
+            out_of_sample_net_r=out_of_sample_net_r,
             average_confidence=average_confidence,
+            precision_grade=precision_grade,
             notes=notes,
         )
 
@@ -195,6 +236,12 @@ class StrategyResearchLab:
             drawdown = max(drawdown, peak - equity)
         return round(drawdown, 4)
 
+    def _out_of_sample_results(self, results: list[float]) -> list[float]:
+        if not results:
+            return []
+        size = max(1, round(len(results) * self.out_of_sample_ratio))
+        return results[-size:]
+
     def _status(
         self,
         candidate: StrategyCandidate,
@@ -202,14 +249,36 @@ class StrategyResearchLab:
         profit_factor: float,
         max_drawdown: float,
         net_r: float,
+        out_of_sample_net_r: float,
     ) -> str:
         if trades < candidate.minimum_trades:
             return "incubating"
-        if profit_factor >= candidate.minimum_profit_factor and max_drawdown <= candidate.maximum_drawdown_r and net_r > 0:
+        if (
+            profit_factor >= candidate.minimum_profit_factor
+            and max_drawdown <= candidate.maximum_drawdown_r
+            and net_r > 0
+            and out_of_sample_net_r > 0
+        ):
             return "approved"
         if net_r > 0 and max_drawdown <= candidate.maximum_drawdown_r * 1.4:
             return "watch"
         return "rejected"
+
+    def _precision_grade(
+        self,
+        trades: int,
+        profit_factor: float,
+        max_drawdown: float,
+        net_r: float,
+        out_of_sample_net_r: float,
+    ) -> str:
+        if trades < 8:
+            return "insufficient_sample"
+        if profit_factor >= 1.5 and max_drawdown <= 4 and net_r > 0 and out_of_sample_net_r > 0:
+            return "high"
+        if profit_factor >= 1.15 and net_r > 0 and out_of_sample_net_r >= 0:
+            return "medium"
+        return "low"
 
     def _notes(
         self,
@@ -218,6 +287,7 @@ class StrategyResearchLab:
         profit_factor: float,
         max_drawdown: float,
         net_r: float,
+        out_of_sample_net_r: float,
         market_condition: str,
     ) -> tuple[str, ...]:
         notes = [f"Tested in {market_condition} conditions."]
@@ -228,9 +298,11 @@ class StrategyResearchLab:
         if max_drawdown > candidate.maximum_drawdown_r:
             notes.append("Drawdown exceeds strategy limit.")
         if net_r > 0:
-            notes.append("Net R is positive after simulated spread-free testing.")
+            notes.append("Net R is positive after spread and slippage cost assumptions.")
         else:
             notes.append("Net R is not strong enough for approval.")
+        if out_of_sample_net_r <= 0:
+            notes.append("Recent out-of-sample R is not positive.")
         return tuple(notes)
 
     def _summary(self, scorecards: list[StrategyScorecard]) -> dict[str, Any]:
