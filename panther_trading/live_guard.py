@@ -24,6 +24,7 @@ class LiveTradingGate:
         approval_status: str | None = None,
         requested_volume: float | None = None,
         unlock_phrase: str | None = None,
+        edge_validation_status: str | None = None,
     ) -> LiveReadiness:
         reasons: list[str] = []
         checklist = [
@@ -32,6 +33,7 @@ class LiveTradingGate:
             "Account mode must be explicitly allowed.",
             "Manual approval must exist for the exact signal.",
             "Requested volume must be inside the live cap.",
+            "Demo edge validation must pass.",
             "Operator must provide the live unlock phrase.",
         ]
 
@@ -57,6 +59,9 @@ class LiveTradingGate:
             reasons.append("Requested volume must be greater than zero.")
         if volume > self.config.max_live_volume:
             reasons.append("Requested volume exceeds max_live_volume.")
+
+        if edge_validation_status != "passed":
+            reasons.append("Demo edge validation has not passed.")
 
         if unlock_phrase != self.config.live_unlock_phrase:
             reasons.append("Live unlock phrase was not provided.")

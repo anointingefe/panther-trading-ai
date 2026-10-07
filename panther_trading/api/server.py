@@ -16,6 +16,7 @@ from panther_trading.live_guard import LiveTradingGate
 from panther_trading.positions import PaperPositionBook
 from panther_trading.research import StrategyResearchLab
 from panther_trading.brokers import create_broker
+from panther_trading.validation import EdgeValidationGate
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +43,9 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/live/readiness":
             self._send_json({"liveReadiness": self._live_readiness()})
+            return
+        if path == "/api/validation/edge":
+            self._send_json({"edgeValidation": self._edge_validation()})
             return
         if path == "/api/research/strategies":
             query = parse_qs(parsed.query)
@@ -74,7 +78,12 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
                 position = None
                 if updated["approval_status"] == "approved":
                     config = load_config(PROJECT_ROOT / "config/demo.yaml")
-                    position = POSITIONS.open_from_journal(updated, volume=config.execution.default_volume)
+                    position = POSITIONS.open_from_journal(
+                        updated,
+                        volume=config.execution.default_volume,
+                        max_open_positions=config.risk.max_open_positions,
+                        max_positions_per_symbol=config.risk.max_positions_per_symbol,
+                    )
                 self._send_json({"entry": updated, "position": position})
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -141,11 +150,13 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
         unlock_phrase: str | None = None,
     ) -> dict:
         config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        edge_validation = self._edge_validation()
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=broker_status(),
             approval_status=approval_status,
             requested_volume=requested_volume,
             unlock_phrase=unlock_phrase,
+            edge_validation_status=edge_validation["status"],
         )
         return {
             "enabled": readiness.enabled,
@@ -153,6 +164,10 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             "reasons": list(readiness.reasons),
             "checklist": list(readiness.checklist),
         }
+
+    def _edge_validation(self) -> dict:
+        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        return EdgeValidationGate(config.validation).evaluate(POSITIONS.latest(limit=1000)).to_dict()
 
     def _send_static(self, path: str) -> None:
         relative = "index.html" if path in {"", "/"} else path.lstrip("/")

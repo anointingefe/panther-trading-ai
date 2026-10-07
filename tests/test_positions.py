@@ -58,3 +58,34 @@ def test_position_book_does_not_duplicate_same_journal_entry(tmp_path) -> None:
 
     assert second["id"] == first["id"]
     assert len(book.latest()) == 1
+
+
+def test_position_book_enforces_total_and_symbol_caps(tmp_path) -> None:
+    book = PaperPositionBook(tmp_path / "positions.jsonl")
+    first = book.open_from_journal(
+        _approved_entry(), volume=0.01, max_open_positions=2, max_positions_per_symbol=1
+    )
+    second_entry = {**_approved_entry(), "id": "sig-test-2", "symbol": "GBPUSD"}
+    book.open_from_journal(
+        second_entry, volume=0.01, max_open_positions=2, max_positions_per_symbol=1
+    )
+
+    same_symbol = {**_approved_entry(), "id": "sig-test-3"}
+    try:
+        book.open_from_journal(
+            same_symbol, volume=0.01, max_open_positions=3, max_positions_per_symbol=1
+        )
+    except ValueError as exc:
+        assert "EURUSD" in str(exc)
+    else:
+        raise AssertionError("Per-symbol cap should reject a second EURUSD position")
+
+    third_entry = {**_approved_entry(), "id": "sig-test-4", "symbol": "USDJPY"}
+    try:
+        book.open_from_journal(
+            third_entry, volume=0.01, max_open_positions=2, max_positions_per_symbol=1
+        )
+    except ValueError as exc:
+        assert "Maximum open demo positions" in str(exc)
+    else:
+        raise AssertionError("Total open-position cap should reject a third position")

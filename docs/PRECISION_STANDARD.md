@@ -14,6 +14,7 @@ when the evidence is weak.
 - Every order must carry entry, stop loss, take profit, volume, rationale, and
   journal trace.
 - Every rejected decision must say why it was rejected.
+- Live execution must remain locked until a separate demo-evidence gate passes.
 
 ## Research Precision
 
@@ -44,6 +45,26 @@ Before any broker execution is allowed, PANTHER must verify:
 - per-trade volume limits
 - manual approval
 - emergency stop availability
+
+Manual approval is not a risk bypass. The paper position book enforces the
+configured total-position cap and per-symbol cap, rejects invalid stop/target
+geometry, rejects non-positive volume, and prevents duplicate journal entries.
+
+## Demo Evidence Gate
+
+Only closed demo trades count toward promotion. The default gate requires:
+
+- at least 30 closed trades
+- at least 14 separate demo trading days
+- profit factor of at least 1.2
+- net performance of at least 5R
+- win rate of at least 35%
+- maximum drawdown no greater than 6R
+
+The gate is computed from stop-normalized R values, excludes open positions, and
+returns explicit reasons for every failed threshold. A passing research score
+alone cannot unlock live trading without passing this independent execution
+evidence gate.
 
 ## Current Build Status
 

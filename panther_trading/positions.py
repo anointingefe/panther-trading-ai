@@ -32,24 +32,48 @@ class PaperPositionBook:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def open_from_journal(self, entry: dict[str, Any], volume: float) -> dict[str, Any]:
+    def open_from_journal(
+        self,
+        entry: dict[str, Any],
+        volume: float,
+        max_open_positions: int | None = None,
+        max_positions_per_symbol: int | None = None,
+    ) -> dict[str, Any]:
         if entry.get("approval_status") != "approved":
             raise ValueError("Only approved journal entries can open demo positions")
+        if volume <= 0:
+            raise ValueError("Demo position volume must be greater than zero")
+
+        side = str(entry["side"])
+        entry_price = float(entry["entry"])
+        stop_loss = float(entry["stop_loss"])
+        take_profit = float(entry["take_profit"])
+        if side == "buy" and not stop_loss < entry_price < take_profit:
+            raise ValueError("Buy orders require stop-loss < entry < take-profit")
+        if side == "sell" and not take_profit < entry_price < stop_loss:
+            raise ValueError("Sell orders require take-profit < entry < stop-loss")
 
         positions = self._read_all()
         existing = self._find_by_journal_id(positions, str(entry["id"]))
         if existing:
             return existing
+        open_positions = [position for position in positions if position["status"] == "open"]
+        if max_open_positions is not None and len(open_positions) >= max_open_positions:
+            raise ValueError("Maximum open demo positions reached")
+        symbol = str(entry["symbol"])
+        symbol_positions = [position for position in open_positions if position["symbol"] == symbol]
+        if max_positions_per_symbol is not None and len(symbol_positions) >= max_positions_per_symbol:
+            raise ValueError(f"Maximum open positions reached for {symbol}")
 
         position = PaperPosition(
             id=f"pos-{uuid4().hex[:12]}",
             journal_entry_id=str(entry["id"]),
-            symbol=str(entry["symbol"]),
-            side=str(entry["side"]),
+            symbol=symbol,
+            side=side,
             volume=float(volume),
-            entry=float(entry["entry"]),
-            stop_loss=float(entry["stop_loss"]),
-            take_profit=float(entry["take_profit"]),
+            entry=entry_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
             status="open",
             opened_at=datetime.now(timezone.utc).isoformat(),
             metadata={

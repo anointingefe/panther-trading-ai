@@ -18,6 +18,7 @@ def test_live_guard_stays_locked_when_config_disables_live() -> None:
         approval_status="approved",
         requested_volume=0.1,
         unlock_phrase="PANTHER_LIVE_APPROVED",
+        edge_validation_status="passed",
     )
 
     assert not readiness.enabled
@@ -33,6 +34,7 @@ def test_live_guard_requires_mt5_broker() -> None:
         approval_status="approved",
         requested_volume=0.1,
         unlock_phrase="PANTHER_LIVE_APPROVED",
+        edge_validation_status="passed",
     )
 
     assert not readiness.armed
@@ -47,6 +49,7 @@ def test_live_guard_can_arm_when_all_conditions_pass() -> None:
         approval_status="approved",
         requested_volume=0.1,
         unlock_phrase="PANTHER_LIVE_APPROVED",
+        edge_validation_status="passed",
     )
 
     assert readiness.enabled
@@ -68,7 +71,23 @@ def test_live_guard_blocks_oversized_live_volume() -> None:
         approval_status="approved",
         requested_volume=0.1,
         unlock_phrase="PANTHER_LIVE_APPROVED",
+        edge_validation_status="passed",
     )
 
     assert not readiness.armed
     assert any("max_live_volume" in reason for reason in readiness.reasons)
+
+
+def test_live_guard_requires_demo_edge_validation() -> None:
+    guard = LiveTradingGate(ExecutionConfig(allow_live_trading=True, default_volume=0.1))
+
+    readiness = guard.readiness(
+        broker_status=_mt5_demo_status(),
+        approval_status="approved",
+        requested_volume=0.1,
+        unlock_phrase="PANTHER_LIVE_APPROVED",
+        edge_validation_status="failed",
+    )
+
+    assert not readiness.armed
+    assert any("edge validation" in reason for reason in readiness.reasons)

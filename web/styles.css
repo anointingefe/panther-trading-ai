@@ -269,6 +269,7 @@ button:disabled {
 .broker-panel,
 .positions-panel,
 .live-panel,
+.edge-panel,
 .research-panel,
 .candle-panel,
 .table-panel,
@@ -288,6 +289,7 @@ button:disabled {
 .broker-panel,
 .positions-panel,
 .live-panel,
+.edge-panel,
 .research-panel,
 .candle-panel,
 .table-panel,
@@ -487,6 +489,7 @@ button:disabled {
   font-weight: 800;
 }
 
+.edge-grid,
 .research-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -494,12 +497,18 @@ button:disabled {
   margin-top: 1rem;
 }
 
+.edge-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.edge-grid div,
 .research-summary div {
   padding: 0.75rem;
   border-radius: 0.5rem;
   background: rgba(255, 255, 255, 0.04);
 }
 
+.edge-grid span,
 .research-summary span,
 .strategy-card span {
   display: block;
@@ -849,6 +858,7 @@ li + li {
   }
 
   .research-summary,
+  .edge-grid,
   .strategy-metrics,
   .candle-box {
     grid-template-columns: 1fr;

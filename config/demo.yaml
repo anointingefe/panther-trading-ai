@@ -10,6 +10,7 @@ risk:
   max_daily_loss_pct: 3.0
   min_confidence: 0.62
   max_open_positions: 3
+  max_positions_per_symbol: 1
 
 strategy:
   fast_sma: 10
@@ -24,3 +25,11 @@ execution:
   allowed_live_account_modes:
     - demo
   live_unlock_phrase: PANTHER_LIVE_APPROVED
+
+validation:
+  min_demo_trades: 30
+  min_demo_days: 14
+  min_profit_factor: 1.2
+  min_net_r: 5.0
+  min_win_rate: 0.35
+  max_drawdown_r: 6.0

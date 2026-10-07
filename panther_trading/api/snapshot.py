@@ -14,6 +14,7 @@ from panther_trading.live_guard import LiveTradingGate
 from panther_trading.models import OrderResult, OrderStatus
 from panther_trading.positions import PaperPositionBook
 from panther_trading.research import StrategyResearchLab, StrategyTrustGate
+from panther_trading.validation import EdgeValidationGate
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -34,10 +35,13 @@ def build_dashboard_snapshot(
     active_symbol = active_symbol or result["symbol"]
     simulator = create_broker("simulated")
     broker = broker_status()
+    positions = PaperPositionBook(DEFAULT_POSITIONS)
+    edge_validation = EdgeValidationGate(config.validation).evaluate(positions.latest(limit=1000))
     live_readiness = LiveTradingGate(config.execution).readiness(
         broker_status=broker,
         approval_status=None,
         requested_volume=config.execution.default_volume,
+        edge_validation_status=edge_validation.status,
     )
     research = StrategyResearchLab(simulator).run(
         active_symbol,
@@ -81,7 +85,8 @@ def build_dashboard_snapshot(
         "candleIntelligence": _jsonable(candle_intelligence),
         "sentiment": _jsonable(result["sentiment"]),
         "broker": broker,
-        "positions": PaperPositionBook(DEFAULT_POSITIONS).open_positions(),
+        "positions": positions.open_positions(),
+        "edgeValidation": edge_validation.to_dict(),
         "research": research,
         "markets": market_universe(),
         "metrics": {

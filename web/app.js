@@ -68,6 +68,21 @@ const fallbackSnapshot = {
     patterns: [],
     notes: []
   },
+  edgeValidation: {
+    status: "insufficient_data",
+    passed: false,
+    reasons: ["Needs at least 30 closed demo trades."],
+    closed_trades: 0,
+    trading_days: 0,
+    wins: 0,
+    losses: 0,
+    win_rate: 0,
+    gross_profit_r: 0,
+    gross_loss_r: 0,
+    profit_factor: 0,
+    net_r: 0,
+    max_drawdown_r: 0
+  },
   journalEntry: null,
   sentiment: {
     score: 0.12,
@@ -156,6 +171,7 @@ function renderDashboard(data) {
   renderLiveReadiness(data.liveReadiness || fallbackSnapshot.liveReadiness);
   renderApproval(data.journalEntry || null);
   renderPositions(data.positions || []);
+  renderEdgeValidation(data.edgeValidation || fallbackSnapshot.edgeValidation);
   renderResearch(data.research || fallbackSnapshot.research);
   renderCandleIntelligence(data.candleIntelligence || fallbackSnapshot.candleIntelligence);
 
@@ -179,6 +195,19 @@ function renderDashboard(data) {
   activity.innerHTML = data.activity.map((item) => `<li>${item}</li>`).join("");
 
   renderMarketUniverse(data.markets || []);
+}
+
+function renderEdgeValidation(report) {
+  setText("edge-status", String(report.status || "waiting").replaceAll("_", " ").toUpperCase());
+  setText("edge-trades", String(report.closed_trades || 0));
+  setText("edge-net-r", Number(report.net_r || 0).toFixed(2));
+  setText("edge-profit-factor", Number(report.profit_factor || 0).toFixed(2));
+  setText("edge-drawdown", `${Number(report.max_drawdown_r || 0).toFixed(2)}R`);
+
+  const reasons = report.reasons || [];
+  document.getElementById("edge-reasons").innerHTML = reasons.length
+    ? reasons.map((reason) => `<li class="blocked">${reason}</li>`).join("")
+    : `<li>Demo edge validation has passed.</li>`;
 }
 
 function renderCandleIntelligence(report) {

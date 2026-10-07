@@ -23,6 +23,7 @@ the evidence is weak.
 - The included config uses a paper broker.
 - Risk controls block oversized positions, excessive daily loss, and low
   confidence ideas.
+- Manual approvals cannot bypass the demo position cap or the one-position-per-symbol cap.
 - The MT5 adapter raises clear setup errors if MetaTrader 5 is unavailable.
 
 ## Quick Start
@@ -93,11 +94,14 @@ The live guard checks all of these before it can arm:
 - The account mode must be in `execution.allowed_live_account_modes`.
 - The journaled signal must already be manually approved.
 - Requested volume must not exceed `execution.max_live_volume`.
+- The demo edge-validation gate must pass its minimum history, performance, and
+  drawdown thresholds.
 - The configured `execution.live_unlock_phrase` must be provided.
 
 Current readiness can be inspected at:
 
 - `GET /api/live/readiness`
+- `GET /api/validation/edge`
 
 The arming endpoint exists for future controlled rollout:
 
@@ -105,6 +109,20 @@ The arming endpoint exists for future controlled rollout:
 
 This endpoint does not place a trade. It only verifies whether live execution
 would be allowed under the current safety rules.
+
+## Demo Edge Validation
+
+The live gate now requires evidence from closed demo positions. The default
+thresholds in `config/demo.yaml` are 30 closed trades across 14 separate trading
+days, profit factor of at least 1.2, net result of at least 5R, win rate of at
+least 35%, and maximum drawdown no greater than 6R. Costs and results are
+measured in R using each position's entry-to-stop distance. Until every
+threshold passes, the dashboard reports the exact missing conditions and live
+readiness remains locked.
+
+The paper execution path also enforces a maximum of three open positions and
+one open position per symbol. These limits apply to manual approvals as well as
+automated signal generation.
 
 ## Strategy Research Lab
 

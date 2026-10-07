@@ -22,6 +22,7 @@ class RiskConfig:
     max_daily_loss_pct: float
     min_confidence: float
     max_open_positions: int
+    max_positions_per_symbol: int = 1
 
 
 @dataclass(frozen=True)
@@ -42,11 +43,22 @@ class ExecutionConfig:
 
 
 @dataclass(frozen=True)
+class ValidationConfig:
+    min_demo_trades: int = 30
+    min_demo_days: int = 14
+    min_profit_factor: float = 1.2
+    min_net_r: float = 5.0
+    min_win_rate: float = 0.35
+    max_drawdown_r: float = 6.0
+
+
+@dataclass(frozen=True)
 class PantherConfig:
     app: AppConfig
     risk: RiskConfig
     strategy: StrategyConfig
     execution: ExecutionConfig
+    validation: ValidationConfig
 
 
 def load_config(path: str | Path) -> PantherConfig:
@@ -59,6 +71,7 @@ def load_config(path: str | Path) -> PantherConfig:
         risk=RiskConfig(**_section(raw, "risk")),
         strategy=StrategyConfig(**_section(raw, "strategy")),
         execution=ExecutionConfig(**execution),
+        validation=ValidationConfig(**raw.get("validation", {})),
     )
 
 
