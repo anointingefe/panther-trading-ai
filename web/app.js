@@ -68,6 +68,17 @@ const fallbackSnapshot = {
     patterns: [],
     notes: []
   },
+  marketStructure: {
+    symbol: "EURUSD",
+    timeframe: "M15",
+    source: "fallback",
+    latest: 1.08065,
+    high: 1.091,
+    low: 1.071,
+    range: 0.02,
+    change: 0,
+    closes: [1.081, 1.083, 1.08, 1.085, 1.084, 1.088, 1.086, 1.09, 1.087, 1.08065]
+  },
   edgeValidation: {
     status: "insufficient_data",
     passed: false,
@@ -196,6 +207,7 @@ function renderDashboard(data) {
   renderEdgeValidation(data.edgeValidation || fallbackSnapshot.edgeValidation);
   renderResearch(data.research || fallbackSnapshot.research);
   renderCandleIntelligence(data.candleIntelligence || fallbackSnapshot.candleIntelligence);
+  renderMarketStructure(data.marketStructure || fallbackSnapshot.marketStructure);
 
   const watchlist = document.getElementById("watchlist");
   watchlist.innerHTML = data.watchlist
@@ -217,6 +229,44 @@ function renderDashboard(data) {
   activity.innerHTML = data.activity.map((item) => `<li>${item}</li>`).join("");
 
   renderMarketUniverse(data.markets || []);
+}
+
+function formatPrice(value) {
+  const number = Number(value || 0);
+  if (Math.abs(number) >= 1000) {
+    return number.toFixed(2);
+  }
+  if (Math.abs(number) >= 10) {
+    return number.toFixed(3);
+  }
+  return number.toFixed(5);
+}
+
+function renderMarketStructure(structure) {
+  const closes = (structure.closes || []).map(Number).filter((value) => Number.isFinite(value));
+  setText("structure-symbol", `${structure.symbol || "Market"} Structure`);
+  setText("structure-source", `${structure.timeframe || "M15"} / ${String(structure.source || "data").toUpperCase()}`);
+  setText("structure-latest", formatPrice(structure.latest));
+  setText("structure-high", formatPrice(structure.high));
+  setText("structure-low", formatPrice(structure.low));
+  setText("structure-range", formatPrice(structure.range));
+
+  const line = document.getElementById("structure-line");
+  if (!closes.length) {
+    line.setAttribute("points", "");
+    return;
+  }
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const span = Math.max(max - min, Number.EPSILON);
+  const points = closes
+    .map((close, index) => {
+      const x = closes.length === 1 ? 50 : (index / (closes.length - 1)) * 100;
+      const y = 88 - ((close - min) / span) * 76;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+  line.setAttribute("points", points);
 }
 
 function renderEdgeValidation(report) {

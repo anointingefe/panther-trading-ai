@@ -17,6 +17,14 @@ def test_snapshot_accepts_selected_symbol() -> None:
 
     assert snapshot["symbol"] == "XAUUSD"
     assert snapshot["signal"]["symbol"] == "XAUUSD"
+    assert snapshot["marketStructure"]["symbol"] == "XAUUSD"
+    assert snapshot["marketStructure"]["closes"]
+
+
+def test_snapshot_watchlist_includes_gold_research_market() -> None:
+    snapshot = build_dashboard_snapshot("config/demo.yaml", symbol="eurusd")
+
+    assert any(item["symbol"] == "XAUUSD" for item in snapshot["watchlist"])
 
 
 def test_simulated_broker_uses_asset_specific_price_ranges() -> None:

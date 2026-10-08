@@ -98,13 +98,29 @@
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Market structure</p>
-                <h2>Live Scan</h2>
+                <h2 id="structure-symbol">Live Scan</h2>
               </div>
-              <span class="soft-label">M15</span>
+              <span class="soft-label" id="structure-source">M15</span>
             </div>
-            <div class="chart">
-              <div class="chart-line"></div>
-              <span class="price-pin">1.0806</span>
+            <div class="chart" id="structure-chart">
+              <svg id="structure-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                <polyline id="structure-line" points=""></polyline>
+              </svg>
+              <span class="price-pin" id="structure-latest">0.00000</span>
+            </div>
+            <div class="structure-grid">
+              <div>
+                <span>High</span>
+                <strong id="structure-high">0.00000</strong>
+              </div>
+              <div>
+                <span>Low</span>
+                <strong id="structure-low">0.00000</strong>
+              </div>
+              <div>
+                <span>Range</span>
+                <strong id="structure-range">0.00000</strong>
+              </div>
             </div>
           </article>
         </section>

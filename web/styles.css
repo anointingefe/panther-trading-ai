@@ -675,11 +675,20 @@ button:disabled {
   background: rgba(255, 107, 107, 0.35);
 }
 
-.chart-line {
+.chart svg {
   position: absolute;
   inset: 15% 5% 18% 5%;
-  clip-path: polygon(0 70%, 10% 62%, 18% 66%, 28% 48%, 39% 54%, 49% 36%, 59% 42%, 69% 28%, 81% 34%, 92% 18%, 100% 24%, 100% 100%, 0 100%);
-  background: linear-gradient(180deg, rgba(124, 255, 178, 0.54), rgba(124, 255, 178, 0.03));
+  width: 90%;
+  height: 67%;
+}
+
+.chart polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 14px rgba(124, 255, 178, 0.35));
 }
 
 .price-pin {
@@ -691,6 +700,31 @@ button:disabled {
   background: var(--accent);
   color: #031008;
   font-weight: 900;
+}
+
+.structure-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.8rem;
+}
+
+.structure-grid div {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.structure-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.structure-grid strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.95rem;
 }
 
 .watchlist {

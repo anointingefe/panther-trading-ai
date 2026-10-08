@@ -59,7 +59,14 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             symbol = query.get("symbol", ["EURUSD"])[0].upper()
             timeframe = query.get("timeframe", ["M15"])[0].upper()
-            self._send_json(StrategyResearchLab(create_broker("simulated")).run(symbol, timeframe=timeframe))
+            try:
+                payload = StrategyResearchLab(create_broker()).run(symbol, timeframe=timeframe)
+                payload["source"] = "configured_broker"
+            except Exception as exc:
+                payload = StrategyResearchLab(create_broker("simulated")).run(symbol, timeframe=timeframe)
+                payload["source"] = "simulated_fallback"
+                payload["fallbackReason"] = str(exc)
+            self._send_json(payload)
             return
         if path == "/api/journal":
             self._send_json({"entries": JOURNAL.latest()})
