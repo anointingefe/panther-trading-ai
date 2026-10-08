@@ -91,6 +91,36 @@ The dashboard includes a Demo / Live execution toggle. The Live side is a
 guarded control: it stays locked unless backend config explicitly enables live
 trading. This prevents the UI from becoming a one-click live-trade switch.
 
+## Demo Auto Runner
+
+PANTHER now includes a guarded MT5 demo proving engine. It is separate from the
+live guard and refuses real account mode. The runner scans a capped set of MT5
+markets, applies the strategy and risk rules, prevents duplicate symbol
+exposure, and can place tiny demo-only incubation orders with stop-loss and
+take-profit attached.
+
+Dashboard controls:
+
+- `Run Demo Cycle` runs one guarded scan-and-place cycle.
+- `Start Loop` repeats the demo cycle every configured interval.
+- `Stop Demo Loop` stops the local background loop.
+
+API controls:
+
+- `GET /api/demo-auto/status`
+- `POST /api/demo-auto/cycle`
+- `POST /api/demo-auto/start`
+- `POST /api/demo-auto/stop`
+
+CLI:
+
+```bash
+PANTHER_BROKER=mt5 python -m panther_trading.cli demo-auto-cycle --config config/demo.yaml
+```
+
+This is still demo only. It exists to create broker-auditable evidence for the
+edge-validation gate, not to bypass live trading safety.
+
 ## Live Trading Guard
 
 PANTHER includes the live-trading control path, but it is inactive by default.

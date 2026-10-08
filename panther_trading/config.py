@@ -43,6 +43,15 @@ class ExecutionConfig:
 
 
 @dataclass(frozen=True)
+class DemoAutoConfig:
+    enabled: bool = False
+    interval_seconds: int = 300
+    max_symbols_per_cycle: int = 8
+    demo_order_volume: float = 0.01
+    allowed_account_modes: tuple[str, ...] = ("demo", "contest", "paper")
+
+
+@dataclass(frozen=True)
 class ValidationConfig:
     min_demo_trades: int = 30
     min_demo_days: int = 14
@@ -58,6 +67,7 @@ class PantherConfig:
     risk: RiskConfig
     strategy: StrategyConfig
     execution: ExecutionConfig
+    demo_auto: DemoAutoConfig
     validation: ValidationConfig
 
 
@@ -66,11 +76,15 @@ def load_config(path: str | Path) -> PantherConfig:
     execution = _section(raw, "execution")
     allowed_modes = execution.get("allowed_live_account_modes", ("demo",))
     execution["allowed_live_account_modes"] = tuple(allowed_modes)
+    demo_auto = raw.get("demo_auto", {})
+    demo_auto_modes = demo_auto.get("allowed_account_modes", ("demo", "contest", "paper"))
+    demo_auto["allowed_account_modes"] = tuple(demo_auto_modes)
     return PantherConfig(
         app=AppConfig(**_section(raw, "app")),
         risk=RiskConfig(**_section(raw, "risk")),
         strategy=StrategyConfig(**_section(raw, "strategy")),
         execution=ExecutionConfig(**execution),
+        demo_auto=DemoAutoConfig(**demo_auto),
         validation=ValidationConfig(**raw.get("validation", {})),
     )
 

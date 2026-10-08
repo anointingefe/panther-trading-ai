@@ -83,6 +83,11 @@ const fallbackSnapshot = {
     net_r: 0,
     max_drawdown_r: 0
   },
+  demoAuto: {
+    running: false,
+    lastCycle: null,
+    message: "Demo auto runner has not run yet."
+  },
   journalEntry: null,
   sentiment: {
     score: 0.12,
@@ -169,6 +174,7 @@ function renderDashboard(data) {
   renderBroker(data.broker || fallbackSnapshot.broker);
   renderExecutionMode(data.executionMode || fallbackSnapshot.executionMode);
   renderLiveReadiness(data.liveReadiness || fallbackSnapshot.liveReadiness);
+  renderDemoAuto(data.demoAuto || fallbackSnapshot.demoAuto);
   renderApproval(data.journalEntry || null);
   renderPositions(data.positions || []);
   renderEdgeValidation(data.edgeValidation || fallbackSnapshot.edgeValidation);
@@ -208,6 +214,38 @@ function renderEdgeValidation(report) {
   document.getElementById("edge-reasons").innerHTML = reasons.length
     ? reasons.map((reason) => `<li class="blocked">${reason}</li>`).join("")
     : `<li>Demo edge validation has passed.</li>`;
+}
+
+function renderDemoAuto(state) {
+  const running = Boolean(state.running);
+  const lastCycle = state.lastCycle || null;
+  setText("demo-auto-status", running ? "RUNNING" : lastCycle ? String(lastCycle.status || "idle").toUpperCase() : "IDLE");
+  setText("demo-auto-message", state.message || "Demo auto runner ready.");
+  const list = document.getElementById("demo-auto-list");
+  if (!lastCycle) {
+    list.innerHTML = `<p class="empty-state">No demo auto cycle has run yet.</p>`;
+    return;
+  }
+  const decisions = lastCycle.decisions || [];
+  if (!decisions.length) {
+    list.innerHTML = `<p class="empty-state">${(lastCycle.reasons || ["No scanned markets."])[0]}</p>`;
+    return;
+  }
+  list.innerHTML = decisions
+    .slice(0, 6)
+    .map(
+      (decision) => `
+        <div class="journal-row">
+          <div>
+            <strong>${decision.symbol} ${String(decision.side).toUpperCase()}</strong>
+            <small>${decision.reason}</small>
+          </div>
+          <span>${decision.action}</span>
+          <small>${pct.format(decision.confidence || 0)}</small>
+        </div>
+      `
+    )
+    .join("");
 }
 
 function renderCandleIntelligence(report) {
@@ -406,6 +444,39 @@ async function syncMt5History() {
   }
 }
 
+async function demoAutoAction(action) {
+  const endpoint = `/api/demo-auto/${action}`;
+  setText("demo-auto-message", action === "cycle" ? "Running one guarded demo cycle..." : "Updating demo loop...");
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Demo auto action failed");
+    }
+    renderDemoAuto(payload.demoAuto || fallbackSnapshot.demoAuto);
+    await refreshPositions();
+  } catch (error) {
+    setText("demo-auto-message", error instanceof Error ? error.message : "Demo auto action failed");
+  }
+}
+
+async function refreshDemoAuto() {
+  try {
+    const response = await fetch("/api/demo-auto/status", { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    renderDemoAuto(payload.demoAuto || fallbackSnapshot.demoAuto);
+  } catch {
+    renderDemoAuto(fallbackSnapshot.demoAuto);
+  }
+}
+
 function renderExecutionMode(executionMode) {
   const demoButton = document.getElementById("demo-mode");
   const liveButton = document.getElementById("live-mode");
@@ -577,6 +648,9 @@ document.getElementById("run-scan").addEventListener("click", refreshSnapshot);
 document.getElementById("approve-signal").addEventListener("click", () => submitDecision("approved"));
 document.getElementById("reject-signal").addEventListener("click", () => submitDecision("rejected"));
 document.getElementById("sync-mt5-history").addEventListener("click", syncMt5History);
+document.getElementById("demo-auto-cycle").addEventListener("click", () => demoAutoAction("cycle"));
+document.getElementById("demo-auto-start").addEventListener("click", () => demoAutoAction("start"));
+document.getElementById("demo-auto-stop").addEventListener("click", () => demoAutoAction("stop"));
 document.getElementById("positions-list").addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;
@@ -608,3 +682,5 @@ document.getElementById("emergency-stop").addEventListener("click", () => {
 renderDashboard(fallbackSnapshot);
 refreshSnapshot();
 refreshJournal();
+refreshDemoAuto();
+setInterval(refreshDemoAuto, 15000);

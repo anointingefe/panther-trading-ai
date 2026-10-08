@@ -19,12 +19,22 @@ strategy:
 
 execution:
   allow_live_trading: false
-  default_volume: 0.1
+  default_volume: 0.01
   require_manual_approval: true
   max_live_volume: 0.1
   allowed_live_account_modes:
     - demo
   live_unlock_phrase: PANTHER_LIVE_APPROVED
+
+demo_auto:
+  enabled: false
+  interval_seconds: 300
+  max_symbols_per_cycle: 8
+  demo_order_volume: 0.01
+  allowed_account_modes:
+    - demo
+    - contest
+    - paper
 
 validation:
   min_demo_trades: 30

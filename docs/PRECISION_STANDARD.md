@@ -50,6 +50,11 @@ Manual approval is not a risk bypass. The paper position book enforces the
 configured total-position cap and per-symbol cap, rejects invalid stop/target
 geometry, rejects non-positive volume, and prevents duplicate journal entries.
 
+Demo automation is allowed only as incubation. It must refuse real account mode,
+respect total and per-symbol position caps, attach stop-loss and take-profit,
+use capped demo volume, and write an auditable cycle state. Demo automation is
+not a live-trading unlock.
+
 ## Demo Evidence Gate
 
 Only closed demo trades count toward promotion. The default gate requires:

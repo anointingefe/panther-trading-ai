@@ -269,6 +269,7 @@ button:disabled {
 .broker-panel,
 .positions-panel,
 .live-panel,
+.demo-auto-panel,
 .edge-panel,
 .research-panel,
 .candle-panel,
@@ -289,6 +290,7 @@ button:disabled {
 .broker-panel,
 .positions-panel,
 .live-panel,
+.demo-auto-panel,
 .edge-panel,
 .research-panel,
 .candle-panel,
@@ -440,10 +442,16 @@ button:disabled {
 }
 
 .positions-list,
+.demo-auto-list,
 .journal-list {
   display: grid;
   gap: 0.65rem;
   margin-top: 1rem;
+}
+
+.full-width-button {
+  width: 100%;
+  margin-top: 0.65rem;
 }
 
 .position-row {

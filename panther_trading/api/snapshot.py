@@ -9,6 +9,7 @@ from panther_trading.brokers import create_broker
 from panther_trading.candles import CandleIntelligenceEngine
 from panther_trading.config import load_config
 from panther_trading.data.markets import default_watchlist, market_universe
+from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.journal import TradeJournal
 from panther_trading.live_guard import LiveTradingGate
 from panther_trading.models import OrderResult, OrderStatus
@@ -20,6 +21,7 @@ from panther_trading.validation import EdgeValidationGate
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_JOURNAL = PROJECT_ROOT / "var/trade_journal.jsonl"
 DEFAULT_POSITIONS = PROJECT_ROOT / "var/paper_positions.jsonl"
+DEFAULT_DEMO_AUTO = PROJECT_ROOT / "var/demo_auto_state.json"
 
 
 def build_dashboard_snapshot(
@@ -87,6 +89,7 @@ def build_dashboard_snapshot(
         "broker": broker,
         "positions": positions.open_positions(),
         "edgeValidation": edge_validation.to_dict(),
+        "demoAuto": DemoAutoTrader(config_path, DEFAULT_DEMO_AUTO).latest_state(),
         "research": research,
         "markets": market_universe(),
         "metrics": {

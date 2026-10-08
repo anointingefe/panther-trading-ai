@@ -9,6 +9,7 @@ from typing import Any
 from panther_trading.brokers import SimulatedBroker
 from panther_trading.config import load_config
 from panther_trading.data import StaticSentimentCollector
+from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.execution import ExecutionEngine
 from panther_trading.risk import RiskManager
 from panther_trading.strategies import SmaSentimentStrategy
@@ -22,10 +23,17 @@ def main() -> None:
     run_once.add_argument("--config", default="config/demo.yaml")
     run_once.add_argument("--symbol")
 
+    demo_cycle = subparsers.add_parser("demo-auto-cycle", help="Run one guarded MT5 demo auto cycle")
+    demo_cycle.add_argument("--config", default="config/demo.yaml")
+    demo_cycle.add_argument("--state", default="var/demo_auto_state.json")
+
     args = parser.parse_args()
     if args.command == "run-once":
         result = run_once_command(Path(args.config), symbol=args.symbol)
         print(json.dumps(_jsonable(result), indent=2))
+    if args.command == "demo-auto-cycle":
+        result = DemoAutoTrader(Path(args.config), Path(args.state)).run_cycle()
+        print(json.dumps(result.to_dict(), indent=2))
 
 
 def run_once_command(config_path: Path, symbol: str | None = None) -> dict[str, Any]:
