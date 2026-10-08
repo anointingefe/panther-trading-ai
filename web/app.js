@@ -157,6 +157,22 @@ function setLoading(isLoading) {
   button.textContent = isLoading ? "Scanning..." : "Run Scan";
 }
 
+async function readJsonResponse(response, fallbackMessage) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const text = await response.text();
+    const hint = text.trim().startsWith("<")
+      ? "Backend route returned HTML. Restart the server after pulling the latest code."
+      : text.slice(0, 160);
+    throw new Error(hint || fallbackMessage);
+  }
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || fallbackMessage);
+  }
+  return payload;
+}
+
 function renderDashboard(data) {
   setText("signal-symbol", data.symbol);
   setText("mode-pill", data.mode);
@@ -430,10 +446,7 @@ async function syncMt5History() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ days: 30 })
     });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "MT5 history sync failed");
-    }
+    const payload = await readJsonResponse(response, "MT5 history sync failed");
     renderEdgeValidation(payload.edgeValidation || fallbackSnapshot.edgeValidation);
     await refreshPositions();
     status.textContent = `${payload.imported || 0} verified closed MT5 trades imported.`;
@@ -453,10 +466,7 @@ async function demoAutoAction(action) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({})
     });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "Demo auto action failed");
-    }
+    const payload = await readJsonResponse(response, "Demo auto action failed");
     renderDemoAuto(payload.demoAuto || fallbackSnapshot.demoAuto);
     await refreshPositions();
   } catch (error) {
