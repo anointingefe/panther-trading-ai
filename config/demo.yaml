@@ -29,7 +29,7 @@ execution:
 demo_auto:
   enabled: false
   interval_seconds: 300
-  max_symbols_per_cycle: 8
+  max_symbols_per_cycle: 64
   demo_order_volume: 0.01
   allowed_account_modes:
     - demo

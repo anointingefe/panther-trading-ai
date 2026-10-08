@@ -106,6 +106,10 @@ class DemoAutoTrader:
         symbols = self._symbols_to_scan(config, available)
         for symbol in symbols:
             decisions.append(self._evaluate_symbol(config, broker, symbol))
+        decisions = sorted(
+            decisions,
+            key=lambda decision: (decision.action != "placed", -decision.confidence, decision.symbol),
+        )
 
         placed = len([decision for decision in decisions if decision.action == "placed"])
         blocked = len(decisions) - placed
@@ -134,7 +138,16 @@ class DemoAutoTrader:
     def _symbols_to_scan(self, config: PantherConfig, available: set[str]) -> list[str]:
         configured = [item["symbol"] for item in market_universe()]
         selected = [symbol for symbol in configured if symbol in available]
+        seen = set(selected)
+        broker_only = sorted(symbol for symbol in available if symbol not in seen and self._is_tradeable_symbol(symbol))
+        selected.extend(broker_only)
         return selected[: config.demo_auto.max_symbols_per_cycle]
+
+    def _is_tradeable_symbol(self, symbol: str) -> bool:
+        clean = symbol.strip()
+        if not clean or len(clean) > 24:
+            return False
+        return any(char.isalpha() for char in clean)
 
     def _evaluate_symbol(self, config: PantherConfig, broker: Broker, symbol: str) -> DemoAutoDecision:
         total_open = broker.count_open_positions()

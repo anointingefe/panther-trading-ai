@@ -38,3 +38,25 @@ def test_demo_auto_scans_demo_safe_broker_and_writes_state(tmp_path) -> None:
     assert cycle.scanned > 0
     assert state["lastCycle"]["scanned"] == cycle.scanned
     assert state["message"]
+
+
+class BrokerWithExtraSymbols(SimulatedBroker):
+    def list_symbols(self):
+        return ["EURUSD", "BROKERX", "SYNTHETIC.TEST", "X" * 25, "12345"]
+
+
+def test_demo_auto_scans_broker_only_symbols_with_safe_filter(tmp_path) -> None:
+    trader = DemoAutoTrader(
+        "config/demo.yaml",
+        tmp_path / "demo_auto_state.json",
+        broker=BrokerWithExtraSymbols(),
+    )
+
+    cycle = trader.run_cycle()
+    scanned_symbols = {decision.symbol for decision in cycle.decisions}
+
+    assert "EURUSD" in scanned_symbols
+    assert "BROKERX" in scanned_symbols
+    assert "SYNTHETIC.TEST" in scanned_symbols
+    assert "X" * 25 not in scanned_symbols
+    assert "12345" not in scanned_symbols

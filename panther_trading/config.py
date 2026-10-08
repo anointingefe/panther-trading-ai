@@ -46,7 +46,7 @@ class ExecutionConfig:
 class DemoAutoConfig:
     enabled: bool = False
     interval_seconds: int = 300
-    max_symbols_per_cycle: int = 8
+    max_symbols_per_cycle: int = 64
     demo_order_volume: float = 0.01
     allowed_account_modes: tuple[str, ...] = ("demo", "contest", "paper")
 
