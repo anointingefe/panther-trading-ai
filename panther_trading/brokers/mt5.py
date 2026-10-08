@@ -101,27 +101,32 @@ class MT5Broker(Broker):
 
         order_type = self.mt5.ORDER_TYPE_BUY if request.side == SignalSide.BUY else self.mt5.ORDER_TYPE_SELL
         price = tick.ask if request.side == SignalSide.BUY else tick.bid
-        result = self.mt5.order_send(
-            {
-                "action": self.mt5.TRADE_ACTION_DEAL,
-                "symbol": request.symbol,
-                "volume": request.volume,
-                "type": order_type,
-                "price": price,
-                "sl": request.stop_loss,
-                "tp": request.take_profit,
-                "deviation": 20,
-                "magic": PANTHER_MAGIC,
-                "comment": request.comment,
-                "type_time": self.mt5.ORDER_TIME_GTC,
-                "type_filling": self.mt5.ORDER_FILLING_IOC,
-            }
-        )
-        if result is None:
-            return OrderResult(OrderStatus.REJECTED, f"MT5 order_send failed: {self.mt5.last_error()}")
-        if result.retcode != self.mt5.TRADE_RETCODE_DONE:
-            return OrderResult(OrderStatus.REJECTED, f"MT5 rejected order: {result.comment}")
-        return OrderResult(OrderStatus.ACCEPTED, result.comment, broker_order_id=str(result.order))
+        payload = {
+            "action": self.mt5.TRADE_ACTION_DEAL,
+            "symbol": request.symbol,
+            "volume": request.volume,
+            "type": order_type,
+            "price": price,
+            "sl": request.stop_loss,
+            "tp": request.take_profit,
+            "deviation": 20,
+            "magic": PANTHER_MAGIC,
+            "comment": request.comment,
+            "type_time": self.mt5.ORDER_TIME_GTC,
+        }
+        rejected: list[str] = []
+        for filling_mode in self._order_filling_modes():
+            result = self.mt5.order_send({**payload, "type_filling": filling_mode})
+            if result is None:
+                rejected.append(f"order_send failed: {self.mt5.last_error()}")
+                continue
+            if result.retcode == self.mt5.TRADE_RETCODE_DONE:
+                return OrderResult(OrderStatus.ACCEPTED, result.comment, broker_order_id=str(result.order))
+            message = str(getattr(result, "comment", "order rejected"))
+            rejected.append(message)
+            if not self._is_filling_mode_rejection(result):
+                return OrderResult(OrderStatus.REJECTED, f"MT5 rejected order: {message}")
+        return OrderResult(OrderStatus.REJECTED, f"MT5 rejected order: {'; '.join(rejected)}")
 
     def get_closed_trades(self, days: int = 30) -> list[ClosedTrade]:
         """Import auditable PANTHER MT5 history for demo validation.
@@ -179,6 +184,20 @@ class MT5Broker(Broker):
         if trade_mode == real:
             return "real"
         return "unknown"
+
+    def _order_filling_modes(self) -> tuple[int, ...]:
+        candidates = (
+            getattr(self.mt5, "ORDER_FILLING_FOK", None),
+            getattr(self.mt5, "ORDER_FILLING_IOC", None),
+            getattr(self.mt5, "ORDER_FILLING_RETURN", None),
+        )
+        return tuple(mode for mode in candidates if mode is not None)
+
+    def _is_filling_mode_rejection(self, result: Any) -> bool:
+        retcode = getattr(result, "retcode", None)
+        invalid_fill = getattr(self.mt5, "TRADE_RETCODE_INVALID_FILL", None)
+        comment = str(getattr(result, "comment", "")).lower()
+        return retcode == invalid_fill or "filling" in comment
 
     def _closed_trade_from_deals(
         self, position_id: str, deals: list[Any], order_by_ticket: dict[str, Any]
