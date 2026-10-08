@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -101,10 +102,11 @@ class MT5Broker(Broker):
 
         order_type = self.mt5.ORDER_TYPE_BUY if request.side == SignalSide.BUY else self.mt5.ORDER_TYPE_SELL
         price = tick.ask if request.side == SignalSide.BUY else tick.bid
+        volume = self._normalized_volume(request.symbol, request.volume)
         payload = {
             "action": self.mt5.TRADE_ACTION_DEAL,
             "symbol": request.symbol,
-            "volume": request.volume,
+            "volume": volume,
             "type": order_type,
             "price": price,
             "sl": request.stop_loss,
@@ -121,7 +123,10 @@ class MT5Broker(Broker):
                 rejected.append(f"order_send failed: {self.mt5.last_error()}")
                 continue
             if result.retcode == self.mt5.TRADE_RETCODE_DONE:
-                return OrderResult(OrderStatus.ACCEPTED, result.comment, broker_order_id=str(result.order))
+                message = str(result.comment)
+                if volume != request.volume:
+                    message = f"{message} (volume adjusted {request.volume:g}->{volume:g})"
+                return OrderResult(OrderStatus.ACCEPTED, message, broker_order_id=str(result.order))
             message = str(getattr(result, "comment", "order rejected"))
             rejected.append(message)
             if not self._is_filling_mode_rejection(result):
@@ -192,6 +197,25 @@ class MT5Broker(Broker):
             getattr(self.mt5, "ORDER_FILLING_RETURN", None),
         )
         return tuple(mode for mode in candidates if mode is not None)
+
+    def _normalized_volume(self, symbol: str, requested: float) -> float:
+        symbol_info = self.mt5.symbol_info(symbol)
+        if symbol_info is None:
+            return requested
+
+        minimum = float(getattr(symbol_info, "volume_min", 0.0) or 0.0)
+        maximum = float(getattr(symbol_info, "volume_max", 0.0) or 0.0)
+        step = float(getattr(symbol_info, "volume_step", 0.0) or 0.0)
+        volume = max(requested, minimum) if minimum > 0 else requested
+
+        if step > 0:
+            steps = math.ceil((volume - minimum) / step) if minimum > 0 else math.ceil(volume / step)
+            volume = (minimum + steps * step) if minimum > 0 else steps * step
+            precision = max(0, len(f"{step:.10f}".rstrip("0").split(".")[-1]))
+            volume = round(volume, precision)
+        if maximum > 0:
+            volume = min(volume, maximum)
+        return volume
 
     def _is_filling_mode_rejection(self, result: Any) -> bool:
         retcode = getattr(result, "retcode", None)

@@ -21,6 +21,9 @@ class FillingModeMT5:
     def symbol_info_tick(self, symbol: str):
         return SimpleNamespace(ask=100.5, bid=100.0)
 
+    def symbol_info(self, symbol: str):
+        return SimpleNamespace(volume_min=0.01, volume_max=100.0, volume_step=0.01)
+
     def order_send(self, payload):
         self.sent_modes.append(payload["type_filling"])
         if payload["type_filling"] != self.ORDER_FILLING_RETURN:
@@ -51,3 +54,38 @@ def test_mt5_order_send_retries_supported_filling_mode() -> None:
         FillingModeMT5.ORDER_FILLING_IOC,
         FillingModeMT5.ORDER_FILLING_RETURN,
     ]
+
+
+class StockVolumeMT5(FillingModeMT5):
+    def __init__(self) -> None:
+        super().__init__()
+        self.sent_payloads = []
+
+    def symbol_info(self, symbol: str):
+        return SimpleNamespace(volume_min=1.0, volume_max=100.0, volume_step=1.0)
+
+    def order_send(self, payload):
+        self.sent_payloads.append(payload)
+        return SimpleNamespace(retcode=self.TRADE_RETCODE_DONE, comment="done", order=9876)
+
+
+def test_mt5_order_send_normalizes_symbol_volume_step() -> None:
+    broker = object.__new__(MT5Broker)
+    fake = StockVolumeMT5()
+    broker.mt5 = fake
+
+    result = broker.place_order(
+        OrderRequest(
+            symbol="MSFT",
+            side=SignalSide.BUY,
+            volume=0.01,
+            entry=100.5,
+            stop_loss=99.5,
+            take_profit=102.5,
+            comment="PANTHER demo incubation",
+        )
+    )
+
+    assert result.status == OrderStatus.ACCEPTED
+    assert fake.sent_payloads[0]["volume"] == 1.0
+    assert "volume adjusted 0.01->1" in result.message
