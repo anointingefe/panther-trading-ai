@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Any
@@ -16,6 +16,9 @@ from panther_trading.data.markets import market_universe
 from panther_trading.models import OrderRequest, OrderStatus
 from panther_trading.risk import RiskManager
 from panther_trading.strategies import SmaSentimentStrategy
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_POSITIONS = PROJECT_ROOT / "var/paper_positions.jsonl"
 
 
 @dataclass(frozen=True)
@@ -59,9 +62,11 @@ class DemoAutoTrader:
         state_path: str | Path,
         broker_kind: str = "mt5",
         broker: Broker | None = None,
+        positions_path: str | Path = DEFAULT_POSITIONS,
     ) -> None:
         self.config_path = Path(config_path)
         self.state_path = Path(state_path)
+        self.positions_path = Path(positions_path)
         self.broker_kind = broker_kind
         self._broker = broker
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,9 +109,10 @@ class DemoAutoTrader:
         decisions: list[DemoAutoDecision] = []
         available = set(broker.list_symbols())
         symbols = self._symbols_to_scan(config, available)
+        loss_state = self._loss_state(config)
         for symbol in symbols:
             try:
-                decisions.append(self._evaluate_symbol(config, broker, symbol))
+                decisions.append(self._evaluate_symbol(config, broker, symbol, loss_state))
             except Exception as exc:
                 decisions.append(self._blocked(symbol, "hold", 0.0, f"Symbol skipped: {exc}"))
         decisions = sorted(
@@ -140,11 +146,28 @@ class DemoAutoTrader:
 
     def _symbols_to_scan(self, config: PantherConfig, available: set[str]) -> list[str]:
         configured = [item["symbol"] for item in market_universe()]
-        selected = [symbol for symbol in configured if symbol in available]
+        selected = [
+            resolved
+            for symbol in configured
+            if (resolved := self._resolve_symbol_alias(symbol, available)) is not None
+        ]
         seen = set(selected)
         broker_only = sorted(symbol for symbol in available if symbol not in seen and self._is_tradeable_symbol(symbol))
         selected.extend(broker_only)
         return selected[: config.demo_auto.max_symbols_per_cycle]
+
+    def _resolve_symbol_alias(self, configured: str, available: set[str]) -> str | None:
+        if configured in available:
+            return configured
+        configured_key = self._symbol_key(configured)
+        matches = sorted(
+            symbol for symbol in available
+            if self._symbol_key(symbol).startswith(configured_key)
+        )
+        return matches[0] if matches else None
+
+    def _symbol_key(self, symbol: str) -> str:
+        return "".join(char for char in symbol.upper() if char.isalnum())
 
     def _is_tradeable_symbol(self, symbol: str) -> bool:
         clean = symbol.strip()
@@ -152,15 +175,27 @@ class DemoAutoTrader:
             return False
         return any(char.isalpha() for char in clean)
 
-    def _evaluate_symbol(self, config: PantherConfig, broker: Broker, symbol: str) -> DemoAutoDecision:
+    def _evaluate_symbol(
+        self,
+        config: PantherConfig,
+        broker: Broker,
+        symbol: str,
+        loss_state: dict[str, dict[str, Any]],
+    ) -> DemoAutoDecision:
         total_open = broker.count_open_positions()
         symbol_open = broker.count_open_positions(symbol)
         if total_open >= config.risk.max_open_positions:
             return self._blocked(symbol, "hold", 0.0, "Maximum total demo positions reached")
         if symbol_open >= config.risk.max_positions_per_symbol:
             return self._blocked(symbol, "hold", 0.0, "Maximum demo positions reached for symbol")
+        cooldown = self._cooldown_reason(config, symbol, loss_state)
+        if cooldown:
+            return self._blocked(symbol, "hold", 0.0, cooldown)
 
         candles = broker.get_candles(symbol, config.app.timeframe, config.app.candles)
+        volatility = self._volatility_guard(config, candles)
+        if volatility:
+            return self._blocked(symbol, "hold", 0.0, volatility)
         sentiment = StaticSentimentCollector().collect(symbol)
         signal = SmaSentimentStrategy(config.strategy).generate(symbol, candles, sentiment)
         risk = RiskManager(config.risk).evaluate(signal, open_positions=total_open)
@@ -198,6 +233,73 @@ class DemoAutoTrader:
             confidence=confidence,
             reason=reason,
         )
+
+    def _loss_state(self, config: PantherConfig) -> dict[str, dict[str, Any]]:
+        if not self.positions_path.exists():
+            return {}
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=config.demo_auto.loss_cooldown_hours)
+        state: dict[str, dict[str, Any]] = {}
+        positions = self._read_positions()
+        for position in sorted(positions, key=lambda item: str(item.get("closed_at") or ""), reverse=True):
+            if position.get("status") != "closed":
+                continue
+            symbol = str(position.get("symbol") or "").upper()
+            record = state.setdefault(symbol, {"recent_loss": False, "consecutive_losses": 0, "latest_closed_at": None})
+            if float(position.get("pnl") or 0.0) >= 0:
+                record["streak_closed"] = True
+                continue
+            closed_at = self._parse_time(position.get("closed_at"))
+            if closed_at and closed_at >= cutoff:
+                record["recent_loss"] = True
+                record["latest_closed_at"] = closed_at.isoformat()
+            if not record.get("streak_closed"):
+                record["consecutive_losses"] = int(record["consecutive_losses"]) + 1
+        return state
+
+    def _cooldown_reason(
+        self,
+        config: PantherConfig,
+        symbol: str,
+        loss_state: dict[str, dict[str, Any]],
+    ) -> str | None:
+        record = loss_state.get(symbol.upper())
+        if not record:
+            return None
+        if record.get("recent_loss"):
+            return (
+                f"Post-loss cooldown active for {symbol}; waiting "
+                f"{config.demo_auto.loss_cooldown_hours}h after latest demo loss"
+            )
+        if int(record.get("consecutive_losses") or 0) >= config.demo_auto.max_consecutive_symbol_losses:
+            return f"Symbol locked after {record['consecutive_losses']} consecutive demo loss(es)"
+        return None
+
+    def _volatility_guard(self, config: PantherConfig, candles: list[Any]) -> str | None:
+        if len(candles) < 25:
+            return None
+        recent = candles[-1].high - candles[-1].low
+        baseline = sum(candle.high - candle.low for candle in candles[-21:-1]) / 20
+        if baseline <= 0:
+            return None
+        if recent > baseline * config.demo_auto.volatility_spike_multiplier:
+            return "Volatility spike guard blocked demo entry"
+        return None
+
+    def _read_positions(self) -> list[dict[str, Any]]:
+        positions = []
+        for line in self.positions_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                positions.append(json.loads(line))
+        return positions
+
+    def _parse_time(self, value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
     def _write_state(self, cycle: DemoAutoCycle, running: bool = False) -> None:
         payload = {

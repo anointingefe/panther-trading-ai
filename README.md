@@ -126,6 +126,12 @@ markets, applies the strategy and risk rules, prevents duplicate symbol
 exposure, and can place tiny demo-only incubation orders with stop-loss and
 take-profit attached.
 
+After a closed demo loss, the runner blocks that symbol for a configurable
+cooldown window and refuses repeated symbol losses from becoming revenge
+trades. It also skips entries when the latest candle range is an abnormal
+volatility spike, and it can match broker suffixes such as `XAUUSDm` back to
+the intended market.
+
 Dashboard controls:
 
 - `Run Demo Cycle` runs one guarded scan-and-place cycle.

@@ -49,6 +49,9 @@ class DemoAutoConfig:
     max_symbols_per_cycle: int = 64
     demo_order_volume: float = 0.01
     allowed_account_modes: tuple[str, ...] = ("demo", "contest", "paper")
+    loss_cooldown_hours: int = 6
+    max_consecutive_symbol_losses: int = 1
+    volatility_spike_multiplier: float = 2.5
 
 
 @dataclass(frozen=True)

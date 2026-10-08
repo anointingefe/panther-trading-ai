@@ -31,6 +31,9 @@ demo_auto:
   interval_seconds: 300
   max_symbols_per_cycle: 64
   demo_order_volume: 0.01
+  loss_cooldown_hours: 6
+  max_consecutive_symbol_losses: 1
+  volatility_spike_multiplier: 2.5
   allowed_account_modes:
     - demo
     - contest
