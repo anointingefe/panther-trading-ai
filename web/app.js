@@ -94,6 +94,20 @@ const fallbackSnapshot = {
     net_r: 0,
     max_drawdown_r: 0
   },
+  learning: {
+    status: "learning",
+    phase: "observation",
+    sample_size: 0,
+    promoted_strategy: null,
+    confidence: 0,
+    score: 0,
+    adaptations: [
+      "Keep live trading locked while the demo evidence set grows.",
+      "Re-rank strategies after each fresh market scan and synced MT5 history batch."
+    ],
+    blockers: ["Needs at least 30 closed demo trades before promotion."],
+    policy: "PANTHER may rank and recommend strategy changes, but it cannot auto-promote a strategy without enough closed demo trades and passing research evidence."
+  },
   demoAuto: {
     running: false,
     lastCycle: null,
@@ -205,6 +219,7 @@ function renderDashboard(data) {
   renderApproval(data.journalEntry || null);
   renderPositions(data.positions || []);
   renderEdgeValidation(data.edgeValidation || fallbackSnapshot.edgeValidation);
+  renderLearning(data.learning || fallbackSnapshot.learning);
   renderResearch(data.research || fallbackSnapshot.research);
   renderCandleIntelligence(data.candleIntelligence || fallbackSnapshot.candleIntelligence);
   renderMarketStructure(data.marketStructure || fallbackSnapshot.marketStructure);
@@ -280,6 +295,22 @@ function renderEdgeValidation(report) {
   document.getElementById("edge-reasons").innerHTML = reasons.length
     ? reasons.map((reason) => `<li class="blocked">${reason}</li>`).join("")
     : `<li>Demo edge validation has passed.</li>`;
+}
+
+function renderLearning(report) {
+  setText("learning-status", String(report.status || "learning").replaceAll("_", " ").toUpperCase());
+  setText("learning-phase", String(report.phase || "observation").replaceAll("_", " ").toUpperCase());
+  setText("learning-sample", String(report.sample_size || 0));
+  setText("learning-confidence", pct.format(report.confidence || 0));
+  setText("learning-strategy", report.promoted_strategy || "Incubating");
+  setText("learning-policy", report.policy || fallbackSnapshot.learning.policy);
+
+  const adaptations = report.adaptations || [];
+  const blockers = report.blockers || [];
+  document.getElementById("learning-list").innerHTML = [
+    ...adaptations.map((item) => `<li>${item}</li>`),
+    ...blockers.map((item) => `<li class="blocked">${item}</li>`)
+  ].join("");
 }
 
 function renderDemoAuto(state) {

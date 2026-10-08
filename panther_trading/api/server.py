@@ -12,6 +12,7 @@ from panther_trading.api.snapshot import broker_status, build_dashboard_snapshot
 from panther_trading.config import load_config
 from panther_trading.data.markets import market_universe
 from panther_trading.journal import TradeJournal
+from panther_trading.learning import EvolutionEngine
 from panther_trading.live_guard import LiveTradingGate
 from panther_trading.demo_auto import DemoAutoRunner, DemoAutoTrader
 from panther_trading.positions import PaperPositionBook
@@ -51,6 +52,12 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/validation/edge":
             self._send_json({"edgeValidation": self._edge_validation()})
+            return
+        if path == "/api/learning":
+            query = parse_qs(parsed.query)
+            symbol = query.get("symbol", ["EURUSD"])[0].upper()
+            timeframe = query.get("timeframe", ["M15"])[0].upper()
+            self._send_json({"learning": self._learning_report(symbol=symbol, timeframe=timeframe)})
             return
         if path == "/api/demo-auto/status":
             self._send_json({"demoAuto": DEMO_AUTO.status()})
@@ -221,6 +228,21 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
     def _edge_validation(self) -> dict:
         config = load_config(PROJECT_ROOT / "config/demo.yaml")
         return EdgeValidationGate(config.validation).evaluate(POSITIONS.latest(limit=1000)).to_dict()
+
+    def _learning_report(self, symbol: str, timeframe: str) -> dict:
+        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        try:
+            research = StrategyResearchLab(create_broker()).run(symbol, timeframe=timeframe)
+        except Exception:
+            research = StrategyResearchLab(create_broker("simulated")).run(symbol, timeframe=timeframe)
+        return EvolutionEngine(
+            minimum_closed_trades=config.validation.min_demo_trades,
+            minimum_profit_factor=config.validation.min_profit_factor,
+        ).evaluate(
+            research=research,
+            positions=POSITIONS.latest(limit=1000),
+            journal_entries=JOURNAL.latest(limit=1000),
+        ).to_dict()
 
     def _send_static(self, path: str) -> None:
         relative = "index.html" if path in {"", "/"} else path.lstrip("/")

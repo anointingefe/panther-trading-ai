@@ -51,11 +51,38 @@ snapshots from:
 
 - `GET /api/markets`
 - `GET /api/snapshot?symbol=XAUUSD`
+- `GET /api/learning?symbol=XAUUSD`
 
 The bundled market universe covers common MT5-style forex pairs, metals,
 energies, indices, crypto, and major stock CFDs. Broker-specific symbols still
 need to be discovered from the connected MT5 account because every broker names
 and exposes instruments differently.
+
+### Phone Access On The Same Wi-Fi
+
+The dashboard can be opened from a phone when the laptop and phone are on the
+same trusted Wi-Fi network. Start the server on all local interfaces:
+
+```bash
+PANTHER_BROKER=mt5 python3 -m panther_trading.api.server --host 0.0.0.0 --port 8090
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:PANTHER_BROKER="mt5"
+python -m panther_trading.api.server --host 0.0.0.0 --port 8090
+```
+
+Find the laptop's local IPv4 address with `ipconfig`, then open this on the
+phone browser:
+
+```text
+http://YOUR-LAPTOP-IP:8090
+```
+
+Do not expose this local server directly to the public internet. It is designed
+for trusted local-network demo control while the live gate remains locked.
 
 ## Broker Mode
 
@@ -199,6 +226,21 @@ If the research lab has no approved strategy for the selected market condition,
 PANTHER blocks the order and records the journal entry as non-approvable. This
 means a weak or unproven strategy cannot become a paper trade just because the
 latest signal looks confident.
+
+## Learning And Evolution
+
+PANTHER now includes an evolution control layer. It does not blindly mutate the
+bot while money is at risk. Instead, it reads:
+
+- current research scorecards
+- closed demo trade outcomes
+- journaled signal decisions
+- broker-backed market scans
+
+The learning report shows whether the system is still observing, actively
+building demo evidence, or ready to promote a strategy. Promotion requires both
+approved research and enough closed demo trades. Until that proof exists, the
+engine can recommend adaptations, but live trading stays locked.
 
 ## Candle Intelligence
 

@@ -12,6 +12,7 @@ from panther_trading.data.markets import default_watchlist, market_universe
 from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.execution import ExecutionEngine
 from panther_trading.journal import TradeJournal
+from panther_trading.learning import EvolutionEngine
 from panther_trading.live_guard import LiveTradingGate
 from panther_trading.models import Candle, OrderResult, OrderStatus
 from panther_trading.positions import PaperPositionBook
@@ -50,7 +51,8 @@ def build_dashboard_snapshot(
     order = ExecutionEngine(simulator, RiskManager(config.risk), config.execution).execute(signal)
     broker = broker_status()
     positions = PaperPositionBook(DEFAULT_POSITIONS)
-    edge_validation = EdgeValidationGate(config.validation).evaluate(positions.latest(limit=1000))
+    position_history = positions.latest(limit=1000)
+    edge_validation = EdgeValidationGate(config.validation).evaluate(position_history)
     live_readiness = LiveTradingGate(config.execution).readiness(
         broker_status=broker,
         approval_status=None,
@@ -76,6 +78,11 @@ def build_dashboard_snapshot(
     strategy_gate = StrategyTrustGate().evaluate(research)
     if order.status != OrderStatus.REJECTED and not strategy_gate.allowed:
         order = OrderResult(OrderStatus.REJECTED, strategy_gate.reason)
+    journal = TradeJournal(DEFAULT_JOURNAL)
+    learning = EvolutionEngine(
+        minimum_closed_trades=config.validation.min_demo_trades,
+        minimum_profit_factor=config.validation.min_profit_factor,
+    ).evaluate(research, position_history, journal.latest(limit=1000))
 
     snapshot = {
         "mode": "Paper",
@@ -107,6 +114,7 @@ def build_dashboard_snapshot(
         "broker": broker,
         "positions": positions.open_positions(),
         "edgeValidation": edge_validation.to_dict(),
+        "learning": learning.to_dict(),
         "demoAuto": DemoAutoTrader(config_path, DEFAULT_DEMO_AUTO).latest_state(),
         "research": research,
         "markets": market_universe(),
@@ -134,7 +142,7 @@ def build_dashboard_snapshot(
         ],
     }
     if record:
-        entry = TradeJournal(DEFAULT_JOURNAL).record_signal(snapshot)
+        entry = journal.record_signal(snapshot)
         snapshot["journalEntry"] = entry.__dict__
     return snapshot
 

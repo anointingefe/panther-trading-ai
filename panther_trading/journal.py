@@ -53,6 +53,12 @@ class TradeJournal:
                 "mode": snapshot.get("mode"),
                 "executionMode": snapshot.get("executionMode"),
                 "broker": snapshot.get("broker"),
+                "strategyGate": snapshot.get("strategyGate"),
+                "researchSummary": (snapshot.get("research") or {}).get("summary"),
+                "marketStructure": {
+                    "source": (snapshot.get("marketStructure") or {}).get("source"),
+                    "timeframe": (snapshot.get("marketStructure") or {}).get("timeframe"),
+                },
             },
         )
         self._append(entry)
