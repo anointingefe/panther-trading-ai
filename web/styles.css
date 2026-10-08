@@ -550,6 +550,25 @@ button:disabled {
   color: var(--text);
 }
 
+.loss-review {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.85rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.loss-review span,
+.loss-review small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.loss-review strong {
+  color: var(--warning);
+}
+
 .strategy-list {
   display: grid;
   gap: 0.75rem;

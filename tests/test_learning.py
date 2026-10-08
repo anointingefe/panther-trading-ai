@@ -50,8 +50,32 @@ def test_evolution_engine_can_mark_strategy_ready_after_demo_proof() -> None:
     assert report.blockers == ()
 
 
+def test_evolution_engine_reviews_latest_demo_loss() -> None:
+    report = EvolutionEngine(minimum_closed_trades=30).evaluate(
+        research={"scorecards": []},
+        positions=[
+            {
+                "status": "closed",
+                "symbol": "XAUUSD",
+                "entry": 2400.0,
+                "stop_loss": 2395.0,
+                "volume": 0.01,
+                "pnl": -0.05,
+                "closed_at": "2026-10-08T18:00:00+00:00",
+            }
+        ],
+        journal_entries=[],
+    )
+
+    assert report.loss_review["losses"] == 1
+    assert report.loss_review["latestSymbol"] == "XAUUSD"
+    assert report.loss_review["latestR"] == -1.0
+    assert "Do not chase" in report.loss_review["actions"][0]
+
+
 def test_snapshot_includes_learning_report() -> None:
     snapshot = build_dashboard_snapshot("config/demo.yaml", symbol="XAUUSD", record=False)
 
     assert snapshot["learning"]["status"] in {"learning", "ready_to_promote"}
     assert snapshot["learning"]["policy"]
+    assert "loss_review" in snapshot["learning"]

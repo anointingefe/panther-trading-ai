@@ -106,6 +106,14 @@ const fallbackSnapshot = {
       "Re-rank strategies after each fresh market scan and synced MT5 history batch."
     ],
     blockers: ["Needs at least 30 closed demo trades before promotion."],
+    loss_review: {
+      losses: 0,
+      latestSymbol: null,
+      latestR: 0,
+      consecutiveLosses: 0,
+      assessment: "No closed demo losses recorded yet.",
+      actions: ["Keep collecting demo outcomes before changing strategy trust."]
+    },
     policy: "PANTHER may rank and recommend strategy changes, but it cannot auto-promote a strategy without enough closed demo trades and passing research evidence."
   },
   demoAuto: {
@@ -304,12 +312,20 @@ function renderLearning(report) {
   setText("learning-confidence", pct.format(report.confidence || 0));
   setText("learning-strategy", report.promoted_strategy || "Incubating");
   setText("learning-policy", report.policy || fallbackSnapshot.learning.policy);
+  const loss = report.loss_review || fallbackSnapshot.learning.loss_review;
+  const lossSymbol = loss.latestSymbol ? `${loss.latestSymbol} ` : "";
+  setText(
+    "learning-loss",
+    `${lossSymbol}${Number(loss.latestR || 0).toFixed(2)}R / ${loss.consecutiveLosses || 0} loss streak`
+  );
+  setText("learning-loss-assessment", loss.assessment || fallbackSnapshot.learning.loss_review.assessment);
 
   const adaptations = report.adaptations || [];
   const blockers = report.blockers || [];
   document.getElementById("learning-list").innerHTML = [
     ...adaptations.map((item) => `<li>${item}</li>`),
-    ...blockers.map((item) => `<li class="blocked">${item}</li>`)
+    ...blockers.map((item) => `<li class="blocked">${item}</li>`),
+    ...(loss.actions || []).map((item) => `<li>${item}</li>`)
   ].join("");
 }
 

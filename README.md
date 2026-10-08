@@ -242,6 +242,11 @@ building demo evidence, or ready to promote a strategy. Promotion requires both
 approved research and enough closed demo trades. Until that proof exists, the
 engine can recommend adaptations, but live trading stays locked.
 
+Every closed demo loss is also reviewed. The dashboard surfaces the latest loss
+in R-multiple terms, tracks the loss streak, and records conservative actions
+such as no size increase, no revenge trade, and more confirmation before trust
+can rise.
+
 ## Candle Intelligence
 
 PANTHER includes a candle intelligence layer inspired by the reviewed candle-box
