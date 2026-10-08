@@ -60,3 +60,28 @@ def test_demo_auto_scans_broker_only_symbols_with_safe_filter(tmp_path) -> None:
     assert "SYNTHETIC.TEST" in scanned_symbols
     assert "X" * 25 not in scanned_symbols
     assert "12345" not in scanned_symbols
+
+
+class BrokerWithBrokenSymbol(SimulatedBroker):
+    def list_symbols(self):
+        return ["EURUSD", "BROKEN"]
+
+    def get_candles(self, symbol: str, timeframe: str, count: int):
+        if symbol == "BROKEN":
+            raise RuntimeError("no rates for symbol")
+        return super().get_candles(symbol, timeframe, count)
+
+
+def test_demo_auto_symbol_failure_does_not_break_cycle(tmp_path) -> None:
+    trader = DemoAutoTrader(
+        "config/demo.yaml",
+        tmp_path / "demo_auto_state.json",
+        broker=BrokerWithBrokenSymbol(),
+    )
+
+    cycle = trader.run_cycle()
+    decisions = {decision.symbol: decision for decision in cycle.decisions}
+
+    assert cycle.scanned == 2
+    assert decisions["BROKEN"].action == "blocked"
+    assert "no rates for symbol" in decisions["BROKEN"].reason

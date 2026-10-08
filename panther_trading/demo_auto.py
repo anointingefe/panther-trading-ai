@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
@@ -13,7 +13,7 @@ from panther_trading.brokers.base import Broker
 from panther_trading.config import PantherConfig, load_config
 from panther_trading.data import StaticSentimentCollector
 from panther_trading.data.markets import market_universe
-from panther_trading.models import OrderRequest, OrderResult, OrderStatus, SignalSide
+from panther_trading.models import OrderRequest, OrderStatus
 from panther_trading.risk import RiskManager
 from panther_trading.strategies import SmaSentimentStrategy
 
@@ -105,7 +105,10 @@ class DemoAutoTrader:
         available = set(broker.list_symbols())
         symbols = self._symbols_to_scan(config, available)
         for symbol in symbols:
-            decisions.append(self._evaluate_symbol(config, broker, symbol))
+            try:
+                decisions.append(self._evaluate_symbol(config, broker, symbol))
+            except Exception as exc:
+                decisions.append(self._blocked(symbol, "hold", 0.0, f"Symbol skipped: {exc}"))
         decisions = sorted(
             decisions,
             key=lambda decision: (decision.action != "placed", -decision.confidence, decision.symbol),
