@@ -4,6 +4,14 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
+from panther_trading.advisor import (
+    CustomStrategyBuilder,
+    DailyOpportunityScanner,
+    MarketTrapDetector,
+    NewsToTradesTranslator,
+    PortfolioRiskAnalyzer,
+    PositionSizingManager,
+)
 from panther_trading.brokers import create_broker
 from panther_trading.candles import CandleIntelligenceEngine
 from panther_trading.config import load_config
@@ -86,6 +94,17 @@ def build_dashboard_snapshot(
         minimum_profit_factor=config.validation.min_profit_factor,
     ).evaluate(research, position_history, journal.latest(limit=1000))
     exit_review = _exit_review(config, market_broker, simulator, positions.open_positions(), market_source)
+    advisor_suite = _advisor_suite(
+        config,
+        market_broker,
+        simulator,
+        active_symbol,
+        signal,
+        candles,
+        market_intelligence,
+        position_history,
+        edge_validation.to_dict(),
+    )
 
     snapshot = {
         "mode": "Paper",
@@ -120,6 +139,7 @@ def build_dashboard_snapshot(
         "learning": learning.to_dict(),
         "exitReview": exit_review,
         "marketIntelligence": market_intelligence,
+        "advisorSuite": advisor_suite,
         "demoAuto": DemoAutoTrader(config_path, DEFAULT_DEMO_AUTO).latest_state(),
         "research": research,
         "markets": market_universe(),
@@ -143,6 +163,7 @@ def build_dashboard_snapshot(
             f"Candle confirmation: {candle_intelligence.confirmation} at {candle_intelligence.confirmation_score:.0%}",
             f"Market intelligence score: {market_intelligence['score']:+.2f}",
             f"Exit manager reviewed {exit_review['reviewed']} open trade(s)",
+            f"Opportunity scanner ranked {len(advisor_suite['opportunities'])} setup(s)",
             "Blended technical and sentiment score",
             f"Strategy gate: {strategy_gate.reason}",
             f"Risk decision: {order.message}",
@@ -242,6 +263,34 @@ def _exit_review(
         },
         "decisions": decisions,
         "policy": "Every trade is reviewed for SL/TP touch, thesis invalidation, time stop, breakeven, and trailing protection.",
+    }
+
+
+def _advisor_suite(
+    config: Any,
+    broker: Any,
+    fallback: Any,
+    symbol: str,
+    signal: Any,
+    candles: list[Candle],
+    intelligence: dict[str, Any],
+    positions: list[dict[str, Any]],
+    edge_validation: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        opportunities = DailyOpportunityScanner().scan(broker, config)
+        source = "configured_broker"
+    except Exception:
+        opportunities = DailyOpportunityScanner().scan(fallback, config)
+        source = "simulated_fallback"
+    return {
+        "source": source,
+        "opportunities": opportunities,
+        "positionSizing": PositionSizingManager().plan(config, signal, positions),
+        "trapDetector": MarketTrapDetector().analyze(symbol, signal.side, candles, intelligence),
+        "newsTrades": NewsToTradesTranslator().translate(intelligence, opportunities),
+        "portfolioRisk": PortfolioRiskAnalyzer().analyze(positions, config),
+        "customStrategy": CustomStrategyBuilder().build(config, edge_validation),
     }
 
 

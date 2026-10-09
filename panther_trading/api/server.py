@@ -8,6 +8,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from panther_trading.advisor import (
+    CustomStrategyBuilder,
+    DailyOpportunityScanner,
+    MarketTrapDetector,
+    NewsToTradesTranslator,
+    PortfolioRiskAnalyzer,
+    PositionSizingManager,
+)
 from panther_trading.api.snapshot import broker_status, build_dashboard_snapshot
 from panther_trading.config import load_config
 from panther_trading.data.markets import market_universe
@@ -69,6 +77,11 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/exits/review":
             self._send_json({"exitReview": self._exit_review()})
+            return
+        if path == "/api/advisor/suite":
+            query = parse_qs(parsed.query)
+            symbol = query.get("symbol", ["EURUSD"])[0].upper()
+            self._send_json({"advisorSuite": self._advisor_suite(symbol)})
             return
         if path == "/api/demo-auto/status":
             self._send_json({"demoAuto": DEMO_AUTO.status()})
@@ -307,6 +320,44 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             },
             "decisions": decisions,
             "policy": "Every trade is reviewed for SL/TP touch, thesis invalidation, time stop, breakeven, and trailing protection.",
+        }
+
+    def _advisor_suite(self, symbol: str) -> dict:
+        from panther_trading.data import MarketIntelligenceCollector
+        from panther_trading.strategies import SmaSentimentStrategy
+        from panther_trading.api.snapshot import _sentiment_from_intelligence
+
+        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        fallback = create_broker("simulated")
+        try:
+            broker = create_broker()
+            source = "configured_broker"
+        except Exception:
+            broker = fallback
+            source = "simulated_fallback"
+        try:
+            candles = broker.get_candles(symbol, config.app.timeframe, config.app.candles)
+        except Exception:
+            candles = fallback.get_candles(symbol, config.app.timeframe, config.app.candles)
+            source = "simulated_fallback"
+        intelligence = MarketIntelligenceCollector().collect(symbol)
+        sentiment = _sentiment_from_intelligence(symbol, intelligence)
+        signal = SmaSentimentStrategy(config.strategy).generate(symbol, candles, sentiment)
+        positions = POSITIONS.latest(limit=1000)
+        edge_validation = self._edge_validation()
+        try:
+            opportunities = DailyOpportunityScanner().scan(broker, config)
+        except Exception:
+            opportunities = DailyOpportunityScanner().scan(fallback, config)
+            source = "simulated_fallback"
+        return {
+            "source": source,
+            "opportunities": opportunities,
+            "positionSizing": PositionSizingManager().plan(config, signal, positions),
+            "trapDetector": MarketTrapDetector().analyze(symbol, signal.side, candles, intelligence),
+            "newsTrades": NewsToTradesTranslator().translate(intelligence, opportunities),
+            "portfolioRisk": PortfolioRiskAnalyzer().analyze(positions, config),
+            "customStrategy": CustomStrategyBuilder().build(config, edge_validation),
         }
 
     def _send_static(self, path: str) -> None:

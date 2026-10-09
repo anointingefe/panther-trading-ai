@@ -295,6 +295,24 @@ neutral report instead of inventing evidence.
 X is not silently scraped. Add X through an official API, approved connector, or
 user-provided post links so the system stays reliable, lawful, and auditable.
 
+## AI Trader Toolkit
+
+The dashboard now includes the practical tools from the reviewed trading prompt
+screenshots:
+
+- Daily opportunity scanner: ranks the strongest moving markets for the next session.
+- Smart journal inputs: closed trade outcomes keep feeding the learning engine.
+- Real-time risk analyzer: estimates open risk and 10% shock exposure.
+- Custom strategy builder: shows the exact proof required before promotion.
+- News-to-trades translator: turns public market intelligence into filtered trade ideas.
+- Strategy backtester: keeps research scorecards before strategy trust.
+- Position sizing manager: sizes from capital, stop distance, risk cap, and loss streak.
+- Market-trap detector: gives reasons not to enter and what must change first.
+
+This layer is designed to make PANTHER smarter, but not reckless. It can reduce
+or block risk after bad evidence; it cannot auto-increase live risk without the
+live guard, demo proof, and explicit operator approval.
+
 ## Candle Intelligence
 
 PANTHER includes a candle intelligence layer inspired by the reviewed candle-box

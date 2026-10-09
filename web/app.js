@@ -140,6 +140,34 @@ const fallbackSnapshot = {
     errors: [],
     policy: "Uses public RSS/web sources when available. X content should be connected through an official API or user-provided links; private or logged-in feeds are not silently scraped."
   },
+  advisorSuite: {
+    source: "fallback",
+    opportunities: [],
+    positionSizing: {
+      unit_size: 0,
+      adjusted_risk_pct: 0,
+      risk_amount: 0,
+      max_simultaneous_trades: 0,
+      rule: "Waiting for signal."
+    },
+    trapDetector: {
+      verdict: "clear",
+      trapCount: 0,
+      reasonsNotToEnter: [],
+      requiredChanges: []
+    },
+    newsTrades: [],
+    portfolioRisk: {
+      openPositions: 0,
+      totalRiskPct: 0,
+      defensiveAdjustment: "Risk load waiting."
+    },
+    customStrategy: {
+      phase: "incubation",
+      workingCriteria: [],
+      adjustmentCriteria: []
+    }
+  },
   demoAuto: {
     running: false,
     lastCycle: null,
@@ -254,6 +282,7 @@ function renderDashboard(data) {
   renderLearning(data.learning || fallbackSnapshot.learning);
   renderExitReview(data.exitReview || fallbackSnapshot.exitReview);
   renderMarketIntelligence(data.marketIntelligence || fallbackSnapshot.marketIntelligence);
+  renderAdvisorSuite(data.advisorSuite || fallbackSnapshot.advisorSuite);
   renderResearch(data.research || fallbackSnapshot.research);
   renderCandleIntelligence(data.candleIntelligence || fallbackSnapshot.candleIntelligence);
   renderMarketStructure(data.marketStructure || fallbackSnapshot.marketStructure);
@@ -446,6 +475,58 @@ function renderMarketIntelligence(report) {
       `;
     })
     .join("");
+}
+
+function renderAdvisorSuite(report) {
+  setText("advisor-source", String(report.source || "ready").replaceAll("_", " ").toUpperCase());
+  const sizing = report.positionSizing || fallbackSnapshot.advisorSuite.positionSizing;
+  setText("advisor-size", `${Number(sizing.unit_size || 0).toFixed(2)} units`);
+  setText(
+    "advisor-size-rule",
+    `${Number(sizing.adjusted_risk_pct || 0).toFixed(2)}% risk / ${money.format(sizing.risk_amount || 0)}. ${sizing.rule || ""}`
+  );
+
+  const trap = report.trapDetector || fallbackSnapshot.advisorSuite.trapDetector;
+  setText("advisor-trap", `${String(trap.verdict || "clear").toUpperCase()} (${trap.trapCount || 0})`);
+  const trapText = (trap.reasonsNotToEnter || [])[0] || (trap.requiredChanges || [])[0] || "No trap detected for the selected setup.";
+  setText("advisor-trap-reason", trapText);
+
+  const risk = report.portfolioRisk || fallbackSnapshot.advisorSuite.portfolioRisk;
+  setText("advisor-risk", pct.format(risk.totalRiskPct || 0));
+  setText("advisor-risk-action", risk.defensiveAdjustment || "Risk load waiting.");
+
+  const opportunities = report.opportunities || [];
+  const opportunityList = document.getElementById("advisor-opportunities");
+  opportunityList.innerHTML = opportunities.length
+    ? opportunities
+        .slice(0, 5)
+        .map(
+          (item) => `
+            <div class="mini-row">
+              <strong>${item.symbol} ${String(item.direction).toUpperCase()}</strong>
+              <span>${pct.format(item.score || 0)}</span>
+            </div>
+          `
+        )
+        .join("")
+    : `<p class="empty-state">Run a scan to rank opportunities.</p>`;
+
+  const newsTrades = report.newsTrades || [];
+  document.getElementById("advisor-news-trades").innerHTML = newsTrades.length
+    ? newsTrades
+        .map(
+          (idea) => `
+            <div class="intel-row">
+              <div>
+                <strong>${idea.symbol} ${String(idea.direction).toUpperCase()} from news</strong>
+                <small>${idea.headline}</small>
+              </div>
+              <span>${pct.format(idea.confidence || 0)}</span>
+            </div>
+          `
+        )
+        .join("")
+    : `<p class="empty-state">No concrete news-derived trades passed the filter.</p>`;
 }
 
 function renderCandleIntelligence(report) {
