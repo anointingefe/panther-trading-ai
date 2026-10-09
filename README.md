@@ -51,6 +51,7 @@ snapshots from:
 
 - `GET /api/markets`
 - `GET /api/snapshot?symbol=XAUUSD`
+- `GET /api/market/structure?symbol=XAUUSD&timeframe=M5&count=160`
 - `GET /api/learning?symbol=XAUUSD`
 - `GET /api/intelligence?symbol=XAUUSD`
 - `GET /api/exits/review`
@@ -130,12 +131,18 @@ take-profit attached.
 
 The demo runner now has its own proving limits:
 
-- `demo_auto.max_open_positions: 8`
+- `demo_auto.max_symbols_per_cycle: 96`
+- `demo_auto.max_orders_per_cycle: 12`
+- `demo_auto.max_open_positions: 12`
 - `demo_auto.max_positions_per_symbol: 1`
 
 The core risk cap remains separate for manual/live pathways. This lets demo
 testing collect more evidence across different markets without loosening live
 execution safety.
+
+The dashboard shows those demo limits directly in the MT5 Auto Runner card, so
+the operator can see whether the system is blocked by confidence, broker
+permissions, per-cycle capacity, or the total open-position cap.
 
 After a closed demo loss, the runner blocks that symbol for a configurable
 cooldown window and refuses repeated symbol losses from becoming revenge
@@ -171,6 +178,32 @@ CLI:
 ```bash
 PANTHER_BROKER=mt5 python -m panther_trading.cli demo-auto-cycle --config config/demo.yaml
 ```
+
+### Windows Pull-and-Run
+
+PowerShell can update and start the system in one command. From the repository
+folder, run:
+
+```powershell
+.\scripts\Start-Panther.ps1 -Broker mt5 -StartDemoLoop
+```
+
+That fetches the latest `main`, fast-forwards the working tree, creates the
+Python virtual environment if needed, installs requirements, starts the API,
+checks `/api/health`, and starts the guarded demo loop. Use `-NoPull` when
+working offline. The script does not unlock live trading.
+
+To start it automatically when Windows logs in, run PowerShell once as the
+user account that should own the process:
+
+```powershell
+.\scripts\Install-PantherStartup.ps1 -Broker mt5
+```
+
+This is laptop auto-start, not public cloud hosting. MetaTrader 5 must be
+installed, logged in to the intended demo account, and allowed to trade. The
+dashboard will honestly show a blocked or simulated state when that connection
+is unavailable.
 
 This is still demo only. It exists to create broker-auditable evidence for the
 edge-validation gate, not to bypass live trading safety.
