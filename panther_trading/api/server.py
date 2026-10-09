@@ -15,6 +15,7 @@ from panther_trading.journal import TradeJournal
 from panther_trading.learning import EvolutionEngine
 from panther_trading.live_guard import LiveTradingGate
 from panther_trading.demo_auto import DemoAutoRunner, DemoAutoTrader
+from panther_trading.exits import ExitManager
 from panther_trading.positions import PaperPositionBook
 from panther_trading.research import StrategyResearchLab
 from panther_trading.brokers import create_broker
@@ -58,6 +59,16 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             symbol = query.get("symbol", ["EURUSD"])[0].upper()
             timeframe = query.get("timeframe", ["M15"])[0].upper()
             self._send_json({"learning": self._learning_report(symbol=symbol, timeframe=timeframe)})
+            return
+        if path == "/api/intelligence":
+            query = parse_qs(parsed.query)
+            symbol = query.get("symbol", ["EURUSD"])[0].upper()
+            from panther_trading.data import MarketIntelligenceCollector
+
+            self._send_json({"marketIntelligence": MarketIntelligenceCollector().collect(symbol)})
+            return
+        if path == "/api/exits/review":
+            self._send_json({"exitReview": self._exit_review()})
             return
         if path == "/api/demo-auto/status":
             self._send_json({"demoAuto": DEMO_AUTO.status()})
@@ -127,6 +138,23 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
                 payload = self._read_json_body()
                 closed = POSITIONS.close_all(reason=str(payload.get("reason", "emergency_stop")))
                 self._send_json({"positions": closed})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/exits/apply":
+            try:
+                review = self._exit_review()
+                closed = []
+                for decision in review["decisions"]:
+                    if decision["action"] == "close" and decision["position_id"]:
+                        closed.append(
+                            POSITIONS.close(
+                                position_id=decision["position_id"],
+                                reason=f"exit_manager_{decision['reason']}",
+                                close_price=decision["close_price"],
+                            )
+                        )
+                self._send_json({"closed": closed, "exitReview": review})
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -243,6 +271,43 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             positions=POSITIONS.latest(limit=1000),
             journal_entries=JOURNAL.latest(limit=1000),
         ).to_dict()
+
+    def _exit_review(self) -> dict:
+        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        fallback = create_broker("simulated")
+        try:
+            broker = create_broker()
+            broker_source = "configured_broker"
+        except Exception:
+            broker = fallback
+            broker_source = "simulated_fallback"
+        manager = ExitManager(config.demo_auto)
+        decisions = []
+        for position in POSITIONS.open_positions():
+            try:
+                candles = broker.get_candles(str(position["symbol"]), "M5", 80)
+                source = broker_source
+                error = None
+            except Exception as exc:
+                candles = fallback.get_candles(str(position["symbol"]), "M5", 80)
+                source = "simulated_fallback"
+                error = str(exc)
+            decision = manager.evaluate_position(position, candles).to_dict()
+            decision["source"] = source
+            if error:
+                decision["data_error"] = error
+            decisions.append(decision)
+        decisions.sort(key=lambda item: (-int(item["priority"]), item["symbol"]))
+        return {
+            "reviewed": len(decisions),
+            "actions": {
+                "close": len([item for item in decisions if item["action"] == "close"]),
+                "protect": len([item for item in decisions if item["action"] in {"move_to_breakeven", "trail_stop"}]),
+                "hold": len([item for item in decisions if item["action"] == "hold"]),
+            },
+            "decisions": decisions,
+            "policy": "Every trade is reviewed for SL/TP touch, thesis invalidation, time stop, breakeven, and trailing protection.",
+        }
 
     def _send_static(self, path: str) -> None:
         relative = "index.html" if path in {"", "/"} else path.lstrip("/")

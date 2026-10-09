@@ -276,6 +276,37 @@
             <ul class="readiness-list" id="edge-reasons"></ul>
           </article>
 
+          <article class="exit-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Exit intelligence</p>
+                <h2>Trade End Plan</h2>
+              </div>
+              <span class="pill" id="exit-status">Clear</span>
+            </div>
+            <p class="approval-copy" id="exit-policy">
+              Every open trade is reviewed for stop, target, invalidation, time stop, breakeven, and trailing protection.
+            </p>
+            <div class="exit-grid">
+              <div>
+                <span>Close</span>
+                <strong id="exit-close">0</strong>
+              </div>
+              <div>
+                <span>Protect</span>
+                <strong id="exit-protect">0</strong>
+              </div>
+              <div>
+                <span>Hold</span>
+                <strong id="exit-hold">0</strong>
+              </div>
+            </div>
+            <div class="exit-list" id="exit-list"></div>
+            <button class="ghost-button full-width-button" id="apply-exits" type="button">
+              Apply Demo Exit Decisions
+            </button>
+          </article>
+
           <article class="learning-panel">
             <div class="panel-head">
               <div>
@@ -310,6 +341,20 @@
               PANTHER ranks strategy changes, but cannot promote them without proof.
             </p>
             <ul class="readiness-list" id="learning-list"></ul>
+          </article>
+
+          <article class="intelligence-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Market intelligence</p>
+                <h2>Public Web Evidence</h2>
+              </div>
+              <span class="pill" id="intel-score">0%</span>
+            </div>
+            <p class="approval-copy" id="intel-policy">
+              Public market feeds are scanned when reachable. X requires official API access or user-provided links.
+            </p>
+            <div class="intel-list" id="intel-list"></div>
           </article>
 
           <article class="research-panel">

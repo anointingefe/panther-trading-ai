@@ -7,10 +7,11 @@ from typing import Any
 from panther_trading.brokers import create_broker
 from panther_trading.candles import CandleIntelligenceEngine
 from panther_trading.config import load_config
-from panther_trading.data import StaticSentimentCollector
+from panther_trading.data import MarketIntelligenceCollector, StaticSentimentCollector
 from panther_trading.data.markets import default_watchlist, market_universe
 from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.execution import ExecutionEngine
+from panther_trading.exits import ExitManager
 from panther_trading.journal import TradeJournal
 from panther_trading.learning import EvolutionEngine
 from panther_trading.live_guard import LiveTradingGate
@@ -46,7 +47,8 @@ def build_dashboard_snapshot(
         config.app.candles,
         market_source,
     )
-    sentiment = StaticSentimentCollector().collect(active_symbol)
+    market_intelligence = MarketIntelligenceCollector().collect(active_symbol)
+    sentiment = _sentiment_from_intelligence(active_symbol, market_intelligence)
     signal = SmaSentimentStrategy(config.strategy).generate(active_symbol, candles, sentiment)
     order = ExecutionEngine(simulator, RiskManager(config.risk), config.execution).execute(signal)
     broker = broker_status()
@@ -83,6 +85,7 @@ def build_dashboard_snapshot(
         minimum_closed_trades=config.validation.min_demo_trades,
         minimum_profit_factor=config.validation.min_profit_factor,
     ).evaluate(research, position_history, journal.latest(limit=1000))
+    exit_review = _exit_review(config, market_broker, simulator, positions.open_positions(), market_source)
 
     snapshot = {
         "mode": "Paper",
@@ -115,6 +118,8 @@ def build_dashboard_snapshot(
         "positions": positions.open_positions(),
         "edgeValidation": edge_validation.to_dict(),
         "learning": learning.to_dict(),
+        "exitReview": exit_review,
+        "marketIntelligence": market_intelligence,
         "demoAuto": DemoAutoTrader(config_path, DEFAULT_DEMO_AUTO).latest_state(),
         "research": research,
         "markets": market_universe(),
@@ -136,6 +141,8 @@ def build_dashboard_snapshot(
             ),
             f"Research source: {research_source.upper()}",
             f"Candle confirmation: {candle_intelligence.confirmation} at {candle_intelligence.confirmation_score:.0%}",
+            f"Market intelligence score: {market_intelligence['score']:+.2f}",
+            f"Exit manager reviewed {exit_review['reviewed']} open trade(s)",
             "Blended technical and sentiment score",
             f"Strategy gate: {strategy_gate.reason}",
             f"Risk decision: {order.message}",
@@ -191,6 +198,51 @@ def _safe_research(
             "simulated",
             f"{symbol} research: {exc}",
         )
+
+
+def _sentiment_from_intelligence(symbol: str, report: dict[str, Any]) -> Any:
+    if report.get("sources") and report.get("items"):
+        from panther_trading.models import SentimentSnapshot
+        from datetime import datetime, timezone
+
+        return SentimentSnapshot(
+            symbol=symbol,
+            score=float(report.get("score") or 0.0),
+            confidence=float(report.get("confidence") or 0.0),
+            sources=tuple(report.get("sources") or ()),
+            collected_at=datetime.now(timezone.utc),
+        )
+    return StaticSentimentCollector().collect(symbol)
+
+
+def _exit_review(
+    config: Any,
+    broker: Any,
+    fallback: Any,
+    positions: list[dict[str, Any]],
+    source_name: str,
+) -> dict[str, Any]:
+    manager = ExitManager(config.demo_auto)
+    decisions = []
+    for position in positions:
+        symbol = str(position.get("symbol") or config.app.symbol)
+        candles, source, error = _safe_candles(broker, fallback, symbol, "M5", 80, source_name)
+        decision = manager.evaluate_position(position, candles).to_dict()
+        decision["source"] = source
+        if error:
+            decision["data_error"] = error
+        decisions.append(decision)
+    decisions.sort(key=lambda item: (-int(item["priority"]), item["symbol"]))
+    return {
+        "reviewed": len(decisions),
+        "actions": {
+            "close": len([item for item in decisions if item["action"] == "close"]),
+            "protect": len([item for item in decisions if item["action"] in {"move_to_breakeven", "trail_stop"}]),
+            "hold": len([item for item in decisions if item["action"] == "hold"]),
+        },
+        "decisions": decisions,
+        "policy": "Every trade is reviewed for SL/TP touch, thesis invalidation, time stop, breakeven, and trailing protection.",
+    }
 
 
 def _market_structure(symbol: str, timeframe: str, candles: list[Candle], source: str) -> dict[str, Any]:

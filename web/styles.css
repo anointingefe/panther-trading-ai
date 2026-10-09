@@ -271,7 +271,9 @@ button:disabled {
 .live-panel,
 .demo-auto-panel,
 .edge-panel,
+.exit-panel,
 .learning-panel,
+.intelligence-panel,
 .research-panel,
 .candle-panel,
 .table-panel,
@@ -293,7 +295,9 @@ button:disabled {
 .live-panel,
 .demo-auto-panel,
 .edge-panel,
+.exit-panel,
 .learning-panel,
+.intelligence-panel,
 .research-panel,
 .candle-panel,
 .table-panel,
@@ -445,6 +449,8 @@ button:disabled {
 
 .positions-list,
 .demo-auto-list,
+.exit-list,
+.intel-list,
 .journal-list {
   display: grid;
   gap: 0.65rem;
@@ -500,6 +506,7 @@ button:disabled {
 }
 
 .edge-grid,
+.exit-grid,
 .learning-grid,
 .research-summary {
   display: grid;
@@ -510,6 +517,10 @@ button:disabled {
 
 .edge-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.exit-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .proof-actions {
@@ -525,6 +536,7 @@ button:disabled {
 }
 
 .edge-grid div,
+.exit-grid div,
 .learning-grid div,
 .research-summary div {
   padding: 0.75rem;
@@ -533,6 +545,7 @@ button:disabled {
 }
 
 .edge-grid span,
+.exit-grid span,
 .learning-grid span,
 .research-summary span,
 .strategy-card span {
@@ -673,6 +686,65 @@ button:disabled {
   padding: 0.7rem;
   border-radius: 0.5rem;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.exit-row,
+.intel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.intel-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.exit-row strong,
+.intel-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.intel-row a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.intel-row a:hover,
+.intel-row a:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.exit-row small,
+.intel-row small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+}
+
+.exit-row span,
+.intel-row span {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.exit-row.close,
+.intel-row.bearish {
+  border-color: rgba(255, 107, 107, 0.38);
+}
+
+.exit-row.move_to_breakeven,
+.exit-row.trail_stop,
+.intel-row.bullish {
+  border-color: rgba(124, 255, 178, 0.38);
 }
 
 .journal-row span,
@@ -946,9 +1018,15 @@ li + li {
 
   .research-summary,
   .edge-grid,
+  .exit-grid,
   .learning-grid,
   .strategy-metrics,
   .candle-box {
+    grid-template-columns: 1fr;
+  }
+
+  .exit-row,
+  .intel-row {
     grid-template-columns: 1fr;
   }
 }

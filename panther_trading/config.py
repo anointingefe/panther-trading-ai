@@ -58,6 +58,9 @@ class DemoAutoConfig:
     bayes_prior_losses: float = 2.0
     bayes_confidence_weight: float = 0.35
     max_kelly_fraction: float = 0.005
+    exit_max_trade_minutes: int = 240
+    exit_breakeven_at_r: float = 1.0
+    exit_trail_at_r: float = 1.5
 
 
 @dataclass(frozen=True)

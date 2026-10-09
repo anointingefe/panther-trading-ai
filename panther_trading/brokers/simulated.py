@@ -70,6 +70,9 @@ class SimulatedBroker(Broker):
             broker_order_id=f"sim-{len(self.orders)}",
         )
 
+    def open_positions(self) -> list[dict]:
+        return []
+
     def _base_price(self, symbol: str) -> float:
         symbol = symbol.upper()
         prices = {

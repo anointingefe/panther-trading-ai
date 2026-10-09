@@ -40,6 +40,9 @@ demo_auto:
   bayes_prior_losses: 2.0
   bayes_confidence_weight: 0.35
   max_kelly_fraction: 0.005
+  exit_max_trade_minutes: 240
+  exit_breakeven_at_r: 1.0
+  exit_trail_at_r: 1.5
   allowed_account_modes:
     - demo
     - contest

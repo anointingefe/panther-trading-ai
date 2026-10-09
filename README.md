@@ -52,6 +52,8 @@ snapshots from:
 - `GET /api/markets`
 - `GET /api/snapshot?symbol=XAUUSD`
 - `GET /api/learning?symbol=XAUUSD`
+- `GET /api/intelligence?symbol=XAUUSD`
+- `GET /api/exits/review`
 
 The bundled market universe covers common MT5-style forex pairs, metals,
 energies, indices, crypto, and major stock CFDs. Broker-specific symbols still
@@ -164,6 +166,25 @@ PANTHER_BROKER=mt5 python -m panther_trading.cli demo-auto-cycle --config config
 This is still demo only. It exists to create broker-auditable evidence for the
 edge-validation gate, not to bypass live trading safety.
 
+## Exit Intelligence
+
+Every PANTHER entry is expected to have a defined stop-loss and take-profit.
+The exit manager now reviews open demo trades and classifies each one as:
+
+- `close` when stop-loss, take-profit, invalidation, or max trade time is hit
+- `move_to_breakeven` after the position reaches the configured R threshold
+- `trail_stop` after stronger profit movement justifies protecting structure
+- `hold` while the original thesis remains valid
+
+Dashboard controls expose the current exit plan and can apply demo close
+decisions to local paper positions:
+
+- `GET /api/exits/review`
+- `POST /api/exits/apply`
+
+The MT5 adapter now has PANTHER-tagged open-position discovery and close-order
+support, but live execution remains behind the existing guard rails.
+
 ## Live Trading Guard
 
 PANTHER includes the live-trading control path, but it is inactive by default.
@@ -263,6 +284,17 @@ in R-multiple terms, tracks the loss streak, and records conservative actions
 such as no size increase, no revenge trade, and more confirmation before trust
 can rise.
 
+## Market Intelligence
+
+PANTHER now has a public market-intelligence collector. It reads public RSS/web
+feeds when reachable, maps stories to symbols such as gold, BTC, oil, indices,
+and major FX pairs, then turns the language into a cautious sentiment score used
+by the dashboard signal. If feeds are unreachable, the collector falls back to a
+neutral report instead of inventing evidence.
+
+X is not silently scraped. Add X through an official API, approved connector, or
+user-provided post links so the system stays reliable, lawful, and auditable.
+
 ## Candle Intelligence
 
 PANTHER includes a candle intelligence layer inspired by the reviewed candle-box
@@ -301,4 +333,5 @@ panther_trading/
    trades to evaluate.
 3. Add economic calendar/news ingestion.
 4. Add X API ingestion with strict spend limits.
-5. Backtest strategies before allowing semi-auto execution.
+5. Add MT5 stop-modification support for breakeven/trailing decisions.
+6. Backtest strategies before allowing semi-auto execution.

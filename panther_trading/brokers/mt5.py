@@ -95,6 +95,32 @@ class MT5Broker(Broker):
             return 0
         return len(positions)
 
+    def open_positions(self) -> list[dict]:
+        positions = self.mt5.positions_get()
+        if positions is None:
+            return []
+        results: list[dict] = []
+        for position in positions:
+            if int(getattr(position, "magic", 0) or 0) != PANTHER_MAGIC:
+                continue
+            side = "buy" if getattr(position, "type", None) == self.mt5.POSITION_TYPE_BUY else "sell"
+            results.append(
+                {
+                    "id": str(getattr(position, "ticket", "")),
+                    "ticket": str(getattr(position, "ticket", "")),
+                    "symbol": str(getattr(position, "symbol", "")),
+                    "side": side,
+                    "volume": float(getattr(position, "volume", 0.0) or 0.0),
+                    "entry": float(getattr(position, "price_open", 0.0) or 0.0),
+                    "stop_loss": float(getattr(position, "sl", 0.0) or 0.0),
+                    "take_profit": float(getattr(position, "tp", 0.0) or 0.0),
+                    "status": "open",
+                    "opened_at": datetime.fromtimestamp(int(getattr(position, "time", 0) or 0), tz=timezone.utc).isoformat(),
+                    "metadata": {"source": "mt5", "comment": str(getattr(position, "comment", ""))},
+                }
+            )
+        return results
+
     def place_order(self, request: OrderRequest) -> OrderResult:
         tick = self.mt5.symbol_info_tick(request.symbol)
         if tick is None:
@@ -132,6 +158,51 @@ class MT5Broker(Broker):
             if not self._is_filling_mode_rejection(result):
                 return OrderResult(OrderStatus.REJECTED, f"MT5 rejected order: {message}")
         return OrderResult(OrderStatus.REJECTED, f"MT5 rejected order: {'; '.join(rejected)}")
+
+    def close_position(self, position_id: str, reason: str = "exit_manager") -> OrderResult:
+        positions = self.mt5.positions_get(ticket=int(position_id))
+        if not positions:
+            return OrderResult(OrderStatus.REJECTED, f"MT5 position not found: {position_id}")
+        position = positions[0]
+        if int(getattr(position, "magic", 0) or 0) != PANTHER_MAGIC:
+            return OrderResult(OrderStatus.REJECTED, "Refusing to close a non-PANTHER position")
+        symbol = str(getattr(position, "symbol", ""))
+        tick = self.mt5.symbol_info_tick(symbol)
+        if tick is None:
+            return OrderResult(OrderStatus.REJECTED, f"No tick available for {symbol}")
+
+        position_type = getattr(position, "type", None)
+        if position_type == self.mt5.POSITION_TYPE_BUY:
+            order_type = self.mt5.ORDER_TYPE_SELL
+            price = tick.bid
+        else:
+            order_type = self.mt5.ORDER_TYPE_BUY
+            price = tick.ask
+        payload = {
+            "action": self.mt5.TRADE_ACTION_DEAL,
+            "position": int(position_id),
+            "symbol": symbol,
+            "volume": float(getattr(position, "volume", 0.0) or 0.0),
+            "type": order_type,
+            "price": price,
+            "deviation": 20,
+            "magic": PANTHER_MAGIC,
+            "comment": f"PANTHER close: {reason}"[:31],
+            "type_time": self.mt5.ORDER_TIME_GTC,
+        }
+        rejected: list[str] = []
+        for filling_mode in self._order_filling_modes():
+            result = self.mt5.order_send({**payload, "type_filling": filling_mode})
+            if result is None:
+                rejected.append(f"order_send failed: {self.mt5.last_error()}")
+                continue
+            if result.retcode == self.mt5.TRADE_RETCODE_DONE:
+                return OrderResult(OrderStatus.ACCEPTED, str(result.comment), broker_order_id=str(result.order))
+            message = str(getattr(result, "comment", "close rejected"))
+            rejected.append(message)
+            if not self._is_filling_mode_rejection(result):
+                return OrderResult(OrderStatus.REJECTED, f"MT5 rejected close: {message}")
+        return OrderResult(OrderStatus.REJECTED, f"MT5 rejected close: {'; '.join(rejected)}")
 
     def get_closed_trades(self, days: int = 30) -> list[ClosedTrade]:
         """Import auditable PANTHER MT5 history for demo validation.

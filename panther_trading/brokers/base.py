@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from panther_trading.models import BrokerStatus, Candle, OrderRequest, OrderResult
+from panther_trading.models import BrokerStatus, Candle, OrderRequest, OrderResult, OrderStatus
 
 
 class Broker(ABC):
@@ -25,3 +25,9 @@ class Broker(ABC):
     @abstractmethod
     def place_order(self, request: OrderRequest) -> OrderResult:
         raise NotImplementedError
+
+    def open_positions(self) -> list[dict]:
+        return []
+
+    def close_position(self, position_id: str, reason: str = "exit_manager") -> OrderResult:
+        return OrderResult(OrderStatus.REJECTED, f"Broker cannot close position {position_id}: {reason}")

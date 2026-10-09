@@ -116,6 +116,30 @@ const fallbackSnapshot = {
     },
     policy: "PANTHER may rank and recommend strategy changes, but it cannot auto-promote a strategy without enough closed demo trades and passing research evidence."
   },
+  exitReview: {
+    reviewed: 0,
+    actions: { close: 0, protect: 0, hold: 0 },
+    decisions: [],
+    policy: "Every trade is reviewed for SL/TP touch, thesis invalidation, time stop, breakeven, and trailing protection."
+  },
+  marketIntelligence: {
+    symbol: "EURUSD",
+    score: 0,
+    confidence: 0,
+    sources: ["market-intelligence-fallback"],
+    items: [
+      {
+        title: "No fresh public feed items matched EURUSD; trade only from price action and demo proof.",
+        source: "market-intelligence-fallback",
+        url: "",
+        polarity: 0,
+        weight: 0.25,
+        symbols: ["EURUSD"]
+      }
+    ],
+    errors: [],
+    policy: "Uses public RSS/web sources when available. X content should be connected through an official API or user-provided links; private or logged-in feeds are not silently scraped."
+  },
   demoAuto: {
     running: false,
     lastCycle: null,
@@ -228,6 +252,8 @@ function renderDashboard(data) {
   renderPositions(data.positions || []);
   renderEdgeValidation(data.edgeValidation || fallbackSnapshot.edgeValidation);
   renderLearning(data.learning || fallbackSnapshot.learning);
+  renderExitReview(data.exitReview || fallbackSnapshot.exitReview);
+  renderMarketIntelligence(data.marketIntelligence || fallbackSnapshot.marketIntelligence);
   renderResearch(data.research || fallbackSnapshot.research);
   renderCandleIntelligence(data.candleIntelligence || fallbackSnapshot.candleIntelligence);
   renderMarketStructure(data.marketStructure || fallbackSnapshot.marketStructure);
@@ -358,6 +384,67 @@ function renderDemoAuto(state) {
         </div>
       `
     )
+    .join("");
+}
+
+function renderExitReview(report) {
+  const actions = report.actions || fallbackSnapshot.exitReview.actions;
+  setText("exit-status", report.reviewed ? "ACTIVE" : "CLEAR");
+  setText("exit-policy", report.policy || fallbackSnapshot.exitReview.policy);
+  setText("exit-close", String(actions.close || 0));
+  setText("exit-protect", String(actions.protect || 0));
+  setText("exit-hold", String(actions.hold || 0));
+
+  const list = document.getElementById("exit-list");
+  const decisions = report.decisions || [];
+  if (!decisions.length) {
+    list.innerHTML = `<p class="empty-state">No open trades need exit action right now.</p>`;
+    return;
+  }
+
+  list.innerHTML = decisions
+    .slice(0, 6)
+    .map(
+      (decision) => `
+        <div class="exit-row ${decision.action}">
+          <div>
+            <strong>${decision.symbol} ${String(decision.side).toUpperCase()}</strong>
+            <small>${decision.reason}</small>
+          </div>
+          <span>${String(decision.action).replaceAll("_", " ")}</span>
+          <small>${Number(decision.r_multiple || 0).toFixed(2)}R</small>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderMarketIntelligence(report) {
+  const score = Number(report.score || 0);
+  setText("intel-score", `${score >= 0 ? "+" : ""}${Math.round(score * 100)}%`);
+  setText("intel-policy", report.policy || fallbackSnapshot.marketIntelligence.policy);
+  const list = document.getElementById("intel-list");
+  const items = report.items || [];
+  if (!items.length) {
+    list.innerHTML = `<p class="empty-state">No public intelligence items available.</p>`;
+    return;
+  }
+  list.innerHTML = items
+    .slice(0, 5)
+    .map((item) => {
+      const polarity = Number(item.polarity || 0);
+      const label = polarity > 0.15 ? "bullish" : polarity < -0.15 ? "bearish" : "neutral";
+      const title = item.url ? `<a href="${item.url}" target="_blank" rel="noreferrer">${item.title}</a>` : item.title;
+      return `
+        <div class="intel-row ${label}">
+          <div>
+            <strong>${title}</strong>
+            <small>${item.source} / ${(item.symbols || []).join(", ")}</small>
+          </div>
+          <span>${label}</span>
+        </div>
+      `;
+    })
     .join("");
 }
 
@@ -647,8 +734,43 @@ async function refreshPositions() {
     }
     const payload = await response.json();
     renderPositions(payload.positions || []);
+    await refreshExitReview();
   } catch {
     renderPositions([]);
+  }
+}
+
+async function refreshExitReview() {
+  try {
+    const response = await fetch("/api/exits/review", { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    renderExitReview(payload.exitReview || fallbackSnapshot.exitReview);
+  } catch {
+    renderExitReview(fallbackSnapshot.exitReview);
+  }
+}
+
+async function applyExitDecisions() {
+  const button = document.getElementById("apply-exits");
+  button.disabled = true;
+  button.textContent = "Applying...";
+  try {
+    const response = await fetch("/api/exits/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const payload = await readJsonResponse(response, "Exit decisions failed");
+    renderExitReview(payload.exitReview || fallbackSnapshot.exitReview);
+    await refreshPositions();
+  } catch (error) {
+    setText("exit-policy", error instanceof Error ? error.message : "Exit decisions failed");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Apply Demo Exit Decisions";
   }
 }
 
@@ -758,6 +880,7 @@ document.getElementById("sync-mt5-history").addEventListener("click", syncMt5His
 document.getElementById("demo-auto-cycle").addEventListener("click", () => demoAutoAction("cycle"));
 document.getElementById("demo-auto-start").addEventListener("click", () => demoAutoAction("start"));
 document.getElementById("demo-auto-stop").addEventListener("click", () => demoAutoAction("stop"));
+document.getElementById("apply-exits").addEventListener("click", applyExitDecisions);
 document.getElementById("positions-list").addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;
