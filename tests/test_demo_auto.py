@@ -3,7 +3,9 @@ import json
 from datetime import datetime, timezone
 
 from panther_trading.brokers.simulated import SimulatedBroker
+from panther_trading.config import load_config
 from panther_trading.demo_auto import DemoAutoTrader
+from panther_trading.models import SignalSide, TradeSignal
 
 
 class RealModeBroker(SimulatedBroker):
@@ -157,3 +159,79 @@ def test_demo_auto_blocks_volatility_spikes(tmp_path) -> None:
 
     assert cycle.decisions[0].action == "blocked"
     assert "Volatility spike" in cycle.decisions[0].reason
+
+
+def test_demo_auto_blocks_weak_temporal_window(tmp_path) -> None:
+    trader = DemoAutoTrader(
+        "config/demo.yaml",
+        tmp_path / "demo_auto_state.json",
+        broker=SimulatedBroker(),
+    )
+    config = load_config("config/demo.yaml")
+    now = datetime.now(timezone.utc)
+    positions = [
+        {
+            "status": "closed",
+            "symbol": "EURUSD",
+            "pnl": -1.0,
+            "opened_at": now.replace(minute=0, second=0, microsecond=0).isoformat(),
+        }
+        for _ in range(config.demo_auto.temporal_min_samples)
+    ]
+
+    reason = trader._temporal_gate(config, "EURUSD", now, positions)
+
+    assert reason is not None
+    assert "Temporal edge blocked" in reason
+
+
+def test_demo_auto_bayesian_update_reduces_confidence_after_losses(tmp_path) -> None:
+    trader = DemoAutoTrader(
+        "config/demo.yaml",
+        tmp_path / "demo_auto_state.json",
+        broker=SimulatedBroker(),
+    )
+    config = load_config("config/demo.yaml")
+    positions = [
+        {"status": "closed", "symbol": "EURUSD", "pnl": -1.0}
+        for _ in range(3)
+    ]
+    signal = TradeSignal(
+        symbol="EURUSD",
+        side=SignalSide.BUY,
+        confidence=0.8,
+        entry=1.1,
+        stop_loss=1.09,
+        take_profit=1.12,
+        rationale=("test",),
+        generated_at=datetime.now(timezone.utc),
+    )
+
+    edge = trader._bayesian_edge_probability(config, "EURUSD", positions)
+    adjusted = trader._adjust_signal_confidence(config, signal, edge)
+
+    assert edge < 0.6
+    assert adjusted.confidence < signal.confidence
+
+
+def test_demo_auto_kelly_sizing_never_exceeds_configured_demo_volume(tmp_path) -> None:
+    trader = DemoAutoTrader(
+        "config/demo.yaml",
+        tmp_path / "demo_auto_state.json",
+        broker=SimulatedBroker(),
+    )
+    config = load_config("config/demo.yaml")
+    signal = TradeSignal(
+        symbol="EURUSD",
+        side=SignalSide.BUY,
+        confidence=0.9,
+        entry=1.1,
+        stop_loss=1.09,
+        take_profit=1.12,
+        rationale=("test",),
+        generated_at=datetime.now(timezone.utc),
+    )
+
+    volume = trader._kelly_volume(config, signal)
+
+    assert 0 < volume <= config.demo_auto.demo_order_volume

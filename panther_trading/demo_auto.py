@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
@@ -13,7 +13,7 @@ from panther_trading.brokers.base import Broker
 from panther_trading.config import PantherConfig, load_config
 from panther_trading.data import StaticSentimentCollector
 from panther_trading.data.markets import market_universe
-from panther_trading.models import OrderRequest, OrderStatus
+from panther_trading.models import OrderRequest, OrderStatus, TradeSignal
 from panther_trading.risk import RiskManager
 from panther_trading.strategies import SmaSentimentStrategy
 
@@ -31,6 +31,8 @@ class DemoAutoDecision:
     order_status: str | None = None
     order_message: str | None = None
     broker_order_id: str | None = None
+    volume: float | None = None
+    edge_probability: float | None = None
 
 
 @dataclass(frozen=True)
@@ -109,7 +111,8 @@ class DemoAutoTrader:
         decisions: list[DemoAutoDecision] = []
         available = set(broker.list_symbols())
         symbols = self._symbols_to_scan(config, available)
-        loss_state = self._loss_state(config)
+        positions = self._read_positions() if self.positions_path.exists() else []
+        loss_state = self._loss_state(config, positions)
         for symbol in symbols:
             try:
                 decisions.append(self._evaluate_symbol(config, broker, symbol, loss_state))
@@ -198,15 +201,22 @@ class DemoAutoTrader:
             return self._blocked(symbol, "hold", 0.0, volatility)
         sentiment = StaticSentimentCollector().collect(symbol)
         signal = SmaSentimentStrategy(config.strategy).generate(symbol, candles, sentiment)
+        positions = self._read_positions() if self.positions_path.exists() else []
+        temporal = self._temporal_gate(config, symbol, signal.generated_at, positions)
+        if temporal:
+            return self._blocked(symbol, signal.side.value, signal.confidence, temporal)
+        edge_probability = self._bayesian_edge_probability(config, symbol, positions)
+        signal = self._adjust_signal_confidence(config, signal, edge_probability)
         risk = RiskManager(config.risk).evaluate(signal, open_positions=total_open)
         if not risk.allowed:
             return self._blocked(symbol, signal.side.value, signal.confidence, risk.reason)
+        volume = self._kelly_volume(config, signal)
 
         result = broker.place_order(
             OrderRequest(
                 symbol=symbol,
                 side=signal.side,
-                volume=config.demo_auto.demo_order_volume,
+                volume=volume,
                 entry=signal.entry,
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit,
@@ -223,6 +233,8 @@ class DemoAutoTrader:
             order_status=result.status.value,
             order_message=result.message,
             broker_order_id=result.broker_order_id,
+            volume=volume,
+            edge_probability=edge_probability,
         )
 
     def _blocked(self, symbol: str, side: str, confidence: float, reason: str) -> DemoAutoDecision:
@@ -234,12 +246,9 @@ class DemoAutoTrader:
             reason=reason,
         )
 
-    def _loss_state(self, config: PantherConfig) -> dict[str, dict[str, Any]]:
-        if not self.positions_path.exists():
-            return {}
+    def _loss_state(self, config: PantherConfig, positions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=config.demo_auto.loss_cooldown_hours)
         state: dict[str, dict[str, Any]] = {}
-        positions = self._read_positions()
         for position in sorted(positions, key=lambda item: str(item.get("closed_at") or ""), reverse=True):
             if position.get("status") != "closed":
                 continue
@@ -285,6 +294,81 @@ class DemoAutoTrader:
             return "Volatility spike guard blocked demo entry"
         return None
 
+    def _temporal_gate(
+        self,
+        config: PantherConfig,
+        symbol: str,
+        signal_time: datetime,
+        positions: list[dict[str, Any]],
+    ) -> str | None:
+        hour = signal_time.astimezone(timezone.utc).hour
+        samples = [
+            position for position in positions
+            if self._same_symbol(position, symbol)
+            and position.get("status") == "closed"
+            and self._position_hour(position) == hour
+        ]
+        if len(samples) < config.demo_auto.temporal_min_samples:
+            return None
+        wins = len([position for position in samples if float(position.get("pnl") or 0.0) > 0])
+        win_rate = wins / len(samples)
+        if win_rate < config.demo_auto.temporal_min_win_rate:
+            return (
+                f"Temporal edge blocked {symbol} at UTC hour {hour}; "
+                f"{win_rate:.0%} win rate from {len(samples)} closed demos"
+            )
+        return None
+
+    def _bayesian_edge_probability(
+        self,
+        config: PantherConfig,
+        symbol: str,
+        positions: list[dict[str, Any]],
+    ) -> float:
+        closed = [
+            position for position in positions
+            if self._same_symbol(position, symbol) and position.get("status") == "closed"
+        ]
+        wins = len([position for position in closed if float(position.get("pnl") or 0.0) > 0])
+        losses = len([position for position in closed if float(position.get("pnl") or 0.0) < 0])
+        alpha = config.demo_auto.bayes_prior_wins + wins
+        beta = config.demo_auto.bayes_prior_losses + losses
+        return round(alpha / (alpha + beta), 4)
+
+    def _adjust_signal_confidence(
+        self,
+        config: PantherConfig,
+        signal: TradeSignal,
+        edge_probability: float,
+    ) -> TradeSignal:
+        weight = min(max(config.demo_auto.bayes_confidence_weight, 0.0), 1.0)
+        confidence = round((signal.confidence * (1 - weight)) + (edge_probability * weight), 4)
+        return replace(
+            signal,
+            confidence=confidence,
+            rationale=(
+                *signal.rationale,
+                f"Bayesian demo edge probability adjusted confidence to {confidence:.0%}.",
+            ),
+        )
+
+    def _kelly_volume(self, config: PantherConfig, signal: TradeSignal) -> float:
+        risk = abs(signal.entry - signal.stop_loss)
+        reward = abs(signal.take_profit - signal.entry)
+        if risk <= 0 or reward <= 0:
+            return 0.0
+        b = reward / risk
+        p = min(max(signal.confidence, 0.0), 1.0)
+        q = 1 - p
+        kelly = max(((p * b) - q) / b, 0.0)
+        cap = config.demo_auto.max_kelly_fraction
+        if cap <= 0:
+            return config.demo_auto.demo_order_volume
+        scale = min(kelly, cap) / cap
+        minimum = config.demo_auto.demo_order_volume * 0.25
+        volume = max(config.demo_auto.demo_order_volume * scale, minimum)
+        return round(min(volume, config.demo_auto.demo_order_volume), 4)
+
     def _read_positions(self) -> list[dict[str, Any]]:
         positions = []
         for line in self.positions_path.read_text(encoding="utf-8").splitlines():
@@ -300,6 +384,15 @@ class DemoAutoTrader:
         except ValueError:
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    def _position_hour(self, position: dict[str, Any]) -> int | None:
+        parsed = self._parse_time(position.get("opened_at") or position.get("closed_at"))
+        return parsed.astimezone(timezone.utc).hour if parsed else None
+
+    def _same_symbol(self, position: dict[str, Any], symbol: str) -> bool:
+        position_key = self._symbol_key(str(position.get("symbol") or ""))
+        symbol_key = self._symbol_key(symbol)
+        return position_key == symbol_key or position_key.startswith(symbol_key) or symbol_key.startswith(position_key)
 
     def _write_state(self, cycle: DemoAutoCycle, running: bool = False) -> None:
         payload = {

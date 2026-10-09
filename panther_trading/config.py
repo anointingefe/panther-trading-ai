@@ -52,6 +52,12 @@ class DemoAutoConfig:
     loss_cooldown_hours: int = 6
     max_consecutive_symbol_losses: int = 1
     volatility_spike_multiplier: float = 2.5
+    temporal_min_samples: int = 8
+    temporal_min_win_rate: float = 0.65
+    bayes_prior_wins: float = 3.0
+    bayes_prior_losses: float = 2.0
+    bayes_confidence_weight: float = 0.35
+    max_kelly_fraction: float = 0.005
 
 
 @dataclass(frozen=True)

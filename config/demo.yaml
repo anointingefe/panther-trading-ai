@@ -34,6 +34,12 @@ demo_auto:
   loss_cooldown_hours: 6
   max_consecutive_symbol_losses: 1
   volatility_spike_multiplier: 2.5
+  temporal_min_samples: 8
+  temporal_min_win_rate: 0.65
+  bayes_prior_wins: 3.0
+  bayes_prior_losses: 2.0
+  bayes_confidence_weight: 0.35
+  max_kelly_fraction: 0.005
   allowed_account_modes:
     - demo
     - contest

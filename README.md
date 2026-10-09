@@ -132,6 +132,16 @@ trades. It also skips entries when the latest candle range is an abnormal
 volatility spike, and it can match broker suffixes such as `XAUUSDm` back to
 the intended market.
 
+The demo runner also uses the useful parts of the temporal-bias/Kelly/Bayesian
+framework seen in public AI-trading posts, but in a conservative form:
+
+- Temporal edge blocks a symbol-hour once enough closed demo history shows the
+  window is weak.
+- Bayesian updates blend the raw signal confidence with actual closed demo
+  outcomes for that symbol.
+- Kelly sizing can reduce demo order volume when edge is weak, but it never
+  increases above the configured demo cap.
+
 Dashboard controls:
 
 - `Run Demo Cycle` runs one guarded scan-and-place cycle.
