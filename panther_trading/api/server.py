@@ -22,6 +22,7 @@ from panther_trading.data.markets import market_universe
 from panther_trading.journal import TradeJournal
 from panther_trading.learning import EvolutionEngine
 from panther_trading.live_guard import LiveTradingGate
+from panther_trading.live_auto import LiveAutoTrader
 from panther_trading.demo_auto import DemoAutoRunner, DemoAutoTrader
 from panther_trading.exits import ExitManager
 from panther_trading.positions import PaperPositionBook
@@ -58,6 +59,9 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/live/readiness":
             self._send_json({"liveReadiness": self._live_readiness()})
+            return
+        if path == "/api/live-auto/status":
+            self._send_json({"liveAuto": LiveAutoTrader(PROJECT_ROOT / "config/demo.yaml", PROJECT_ROOT / "var/paper_positions.jsonl").status()})
             return
         if path == "/api/validation/edge":
             self._send_json({"edgeValidation": self._edge_validation()})
@@ -106,8 +110,10 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"positions": POSITIONS.latest()})
             return
         if path == "/api/snapshot":
-            symbol = parse_qs(parsed.query).get("symbol", [None])[0]
-            self._send_json(build_dashboard_snapshot(PROJECT_ROOT / "config/demo.yaml", symbol=symbol))
+            query = parse_qs(parsed.query)
+            symbol = query.get("symbol", [None])[0]
+            record = str(query.get("record", ["true"])[0]).lower() not in {"0", "false", "no"}
+            self._send_json(build_dashboard_snapshot(PROJECT_ROOT / "config/demo.yaml", symbol=symbol, record=record))
             return
         self._send_static(path)
 

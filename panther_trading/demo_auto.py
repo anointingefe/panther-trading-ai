@@ -187,9 +187,9 @@ class DemoAutoTrader:
     ) -> DemoAutoDecision:
         total_open = broker.count_open_positions()
         symbol_open = broker.count_open_positions(symbol)
-        if total_open >= config.risk.max_open_positions:
+        if total_open >= config.demo_auto.max_open_positions:
             return self._blocked(symbol, "hold", 0.0, "Maximum total demo positions reached")
-        if symbol_open >= config.risk.max_positions_per_symbol:
+        if symbol_open >= config.demo_auto.max_positions_per_symbol:
             return self._blocked(symbol, "hold", 0.0, "Maximum demo positions reached for symbol")
         cooldown = self._cooldown_reason(config, symbol, loss_state)
         if cooldown:
@@ -207,7 +207,12 @@ class DemoAutoTrader:
             return self._blocked(symbol, signal.side.value, signal.confidence, temporal)
         edge_probability = self._bayesian_edge_probability(config, symbol, positions)
         signal = self._adjust_signal_confidence(config, signal, edge_probability)
-        risk = RiskManager(config.risk).evaluate(signal, open_positions=total_open)
+        demo_risk = replace(
+            config.risk,
+            max_open_positions=config.demo_auto.max_open_positions,
+            max_positions_per_symbol=config.demo_auto.max_positions_per_symbol,
+        )
+        risk = RiskManager(demo_risk).evaluate(signal, open_positions=total_open)
         if not risk.allowed:
             return self._blocked(symbol, signal.side.value, signal.confidence, risk.reason)
         volume = self._kelly_volume(config, signal)

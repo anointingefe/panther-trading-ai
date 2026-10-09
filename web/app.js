@@ -77,7 +77,8 @@ const fallbackSnapshot = {
     low: 1.071,
     range: 0.02,
     change: 0,
-    closes: [1.081, 1.083, 1.08, 1.085, 1.084, 1.088, 1.086, 1.09, 1.087, 1.08065]
+    closes: [1.081, 1.083, 1.08, 1.085, 1.084, 1.088, 1.086, 1.09, 1.087, 1.08065],
+    candles: []
   },
   edgeValidation: {
     status: "insufficient_data",
@@ -172,6 +173,18 @@ const fallbackSnapshot = {
     running: false,
     lastCycle: null,
     message: "Demo auto runner has not run yet."
+  },
+  liveAuto: {
+    built: true,
+    armed: false,
+    enabled: false,
+    message: "Live runner is built but locked by safety gates.",
+    reasons: ["Backend config has allow_live_trading=false."]
+  },
+  demoLimits: {
+    maxOpenPositions: 8,
+    maxPositionsPerSymbol: 1,
+    coreRiskMaxOpenPositions: 3
   },
   journalEntry: null,
   sentiment: {
@@ -275,6 +288,7 @@ function renderDashboard(data) {
   renderBroker(data.broker || fallbackSnapshot.broker);
   renderExecutionMode(data.executionMode || fallbackSnapshot.executionMode);
   renderLiveReadiness(data.liveReadiness || fallbackSnapshot.liveReadiness);
+  renderLiveAuto(data.liveAuto || fallbackSnapshot.liveAuto);
   renderDemoAuto(data.demoAuto || fallbackSnapshot.demoAuto);
   renderApproval(data.journalEntry || null);
   renderPositions(data.positions || []);
@@ -322,6 +336,9 @@ function formatPrice(value) {
 
 function renderMarketStructure(structure) {
   const closes = (structure.closes || []).map(Number).filter((value) => Number.isFinite(value));
+  const candles = (structure.candles || []).filter((candle) =>
+    ["open", "high", "low", "close"].every((key) => Number.isFinite(Number(candle[key])))
+  );
   setText("structure-symbol", `${structure.symbol || "Market"} Structure`);
   setText("structure-source", `${structure.timeframe || "M15"} / ${String(structure.source || "data").toUpperCase()}`);
   setText("structure-latest", formatPrice(structure.latest));
@@ -330,17 +347,41 @@ function renderMarketStructure(structure) {
   setText("structure-range", formatPrice(structure.range));
 
   const line = document.getElementById("structure-line");
-  if (!closes.length) {
+  const candleLayer = document.getElementById("candle-layer");
+  candleLayer.innerHTML = "";
+  if (!closes.length && !candles.length) {
     line.setAttribute("points", "");
     return;
   }
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
+  const lows = candles.length ? candles.map((candle) => Number(candle.low)) : closes;
+  const highs = candles.length ? candles.map((candle) => Number(candle.high)) : closes;
+  const min = Math.min(...lows);
+  const max = Math.max(...highs);
   const span = Math.max(max - min, Number.EPSILON);
+  const yFor = (price) => 92 - ((Number(price) - min) / span) * 84;
+  if (candles.length) {
+    const width = Math.max(0.5, Math.min(1.35, 58 / candles.length));
+    candleLayer.innerHTML = candles
+      .map((candle, index) => {
+        const x = candles.length === 1 ? 50 : 4 + (index / (candles.length - 1)) * 92;
+        const open = yFor(candle.open);
+        const close = yFor(candle.close);
+        const high = yFor(candle.high);
+        const low = yFor(candle.low);
+        const bullish = Number(candle.close) >= Number(candle.open);
+        const top = Math.min(open, close);
+        const height = Math.max(Math.abs(close - open), 0.65);
+        return `
+          <line class="candle-wick ${bullish ? "up" : "down"}" x1="${x.toFixed(2)}" y1="${high.toFixed(2)}" x2="${x.toFixed(2)}" y2="${low.toFixed(2)}"></line>
+          <rect class="candle-body ${bullish ? "up" : "down"}" x="${(x - width / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${width.toFixed(2)}" height="${height.toFixed(2)}"></rect>
+        `;
+      })
+      .join("");
+  }
   const points = closes
     .map((close, index) => {
       const x = closes.length === 1 ? 50 : (index / (closes.length - 1)) * 100;
-      const y = 88 - ((close - min) / span) * 76;
+      const y = yFor(close);
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
@@ -400,7 +441,7 @@ function renderDemoAuto(state) {
     return;
   }
   list.innerHTML = decisions
-    .slice(0, 6)
+    .slice(0, 10)
     .map(
       (decision) => `
         <div class="journal-row">
@@ -414,6 +455,12 @@ function renderDemoAuto(state) {
       `
     )
     .join("");
+}
+
+function renderLiveAuto(state) {
+  const status = state.armed ? "Built / Armed" : state.enabled ? "Built / Guarded" : "Built / Locked";
+  setText("live-auto-status", status.toUpperCase());
+  setText("live-auto-message", state.message || "Live execution path is present but disabled.");
 }
 
 function renderExitReview(report) {
@@ -781,11 +828,20 @@ function renderBroker(broker) {
   setText("broker-message", broker.message);
 }
 
-async function refreshSnapshot() {
+async function refreshSnapshot(record = true, quiet = false) {
+  if (record instanceof Event) {
+    record = true;
+    quiet = false;
+  }
   const selectedSymbol = document.getElementById("market-select").value || fallbackSnapshot.symbol;
-  setLoading(true);
+  if (!quiet) {
+    setLoading(true);
+  }
   try {
-    const response = await fetch(`/api/snapshot?symbol=${encodeURIComponent(selectedSymbol)}`, { cache: "no-store" });
+    const response = await fetch(
+      `/api/snapshot?symbol=${encodeURIComponent(selectedSymbol)}&record=${record ? "true" : "false"}`,
+      { cache: "no-store" }
+    );
     if (!response.ok) {
       throw new Error(`Snapshot request failed: ${response.status}`);
     }
@@ -803,7 +859,9 @@ async function refreshSnapshot() {
       ]
     });
   } finally {
-    setLoading(false);
+    if (!quiet) {
+      setLoading(false);
+    }
   }
 }
 
@@ -995,3 +1053,4 @@ refreshSnapshot();
 refreshJournal();
 refreshDemoAuto();
 setInterval(refreshDemoAuto, 15000);
+setInterval(() => refreshSnapshot(false, true), 30000);

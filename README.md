@@ -128,6 +128,15 @@ markets, applies the strategy and risk rules, prevents duplicate symbol
 exposure, and can place tiny demo-only incubation orders with stop-loss and
 take-profit attached.
 
+The demo runner now has its own proving limits:
+
+- `demo_auto.max_open_positions: 8`
+- `demo_auto.max_positions_per_symbol: 1`
+
+The core risk cap remains separate for manual/live pathways. This lets demo
+testing collect more evidence across different markets without loosening live
+execution safety.
+
 After a closed demo loss, the runner blocks that symbol for a configurable
 cooldown window and refuses repeated symbol losses from becoming revenge
 trades. It also skips entries when the latest candle range is an abnormal
@@ -211,6 +220,14 @@ The arming endpoint exists for future controlled rollout:
 
 This endpoint does not place a trade. It only verifies whether live execution
 would be allowed under the current safety rules.
+
+The live runner scaffold also exists now and can be inspected at:
+
+- `GET /api/live-auto/status`
+
+It is built for a future controlled rollout, but it remains locked unless the
+live guard passes every condition: MT5 connection, allowed account mode, approved
+signal, volume cap, demo edge validation, and unlock phrase.
 
 ## Demo Edge Validation
 

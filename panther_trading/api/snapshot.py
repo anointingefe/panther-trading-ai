@@ -23,6 +23,7 @@ from panther_trading.exits import ExitManager
 from panther_trading.journal import TradeJournal
 from panther_trading.learning import EvolutionEngine
 from panther_trading.live_guard import LiveTradingGate
+from panther_trading.live_auto import LiveAutoTrader
 from panther_trading.models import Candle, OrderResult, OrderStatus
 from panther_trading.positions import PaperPositionBook
 from panther_trading.risk import RiskManager
@@ -141,6 +142,12 @@ def build_dashboard_snapshot(
         "marketIntelligence": market_intelligence,
         "advisorSuite": advisor_suite,
         "demoAuto": DemoAutoTrader(config_path, DEFAULT_DEMO_AUTO).latest_state(),
+        "liveAuto": LiveAutoTrader(config_path, DEFAULT_POSITIONS).status(),
+        "demoLimits": {
+            "maxOpenPositions": config.demo_auto.max_open_positions,
+            "maxPositionsPerSymbol": config.demo_auto.max_positions_per_symbol,
+            "coreRiskMaxOpenPositions": config.risk.max_open_positions,
+        },
         "research": research,
         "markets": market_universe(),
         "metrics": {
@@ -313,6 +320,17 @@ def _market_structure(symbol: str, timeframe: str, candles: list[Candle], source
         "range": round(high - low, 6),
         "change": round(latest - previous, 6),
         "closes": [round(close, 6) for close in closes],
+        "candles": [
+            {
+                "time": candle.time.isoformat(),
+                "open": round(candle.open, 6),
+                "high": round(candle.high, 6),
+                "low": round(candle.low, 6),
+                "close": round(candle.close, 6),
+                "volume": round(candle.volume, 6),
+            }
+            for candle in recent
+        ],
     }
 
 

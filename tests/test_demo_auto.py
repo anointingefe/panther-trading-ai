@@ -235,3 +235,10 @@ def test_demo_auto_kelly_sizing_never_exceeds_configured_demo_volume(tmp_path) -
     volume = trader._kelly_volume(config, signal)
 
     assert 0 < volume <= config.demo_auto.demo_order_volume
+
+
+def test_demo_auto_uses_separate_demo_position_limit(tmp_path) -> None:
+    config = load_config("config/demo.yaml")
+
+    assert config.risk.max_open_positions == 3
+    assert config.demo_auto.max_open_positions == 8

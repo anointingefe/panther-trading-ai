@@ -47,6 +47,8 @@ class DemoAutoConfig:
     enabled: bool = False
     interval_seconds: int = 300
     max_symbols_per_cycle: int = 64
+    max_open_positions: int = 8
+    max_positions_per_symbol: int = 1
     demo_order_volume: float = 0.01
     allowed_account_modes: tuple[str, ...] = ("demo", "contest", "paper")
     loss_cooldown_hours: int = 6
