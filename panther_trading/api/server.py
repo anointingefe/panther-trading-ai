@@ -16,7 +16,7 @@ from panther_trading.advisor import (
     PortfolioRiskAnalyzer,
     PositionSizingManager,
 )
-from panther_trading.api.snapshot import broker_status, build_dashboard_snapshot
+from panther_trading.api.snapshot import broker_status, build_dashboard_snapshot, build_market_structure_snapshot
 from panther_trading.config import load_config
 from panther_trading.data.markets import market_universe
 from panther_trading.journal import TradeJournal
@@ -43,6 +43,7 @@ DEMO_AUTO = DemoAutoRunner(
 
 class PantherRequestHandler(BaseHTTPRequestHandler):
     server_version = "PantherTradingHTTP/0.1"
+    _client_disconnect_errors = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -114,6 +115,22 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             symbol = query.get("symbol", [None])[0]
             record = str(query.get("record", ["true"])[0]).lower() not in {"0", "false", "no"}
             self._send_json(build_dashboard_snapshot(PROJECT_ROOT / "config/demo.yaml", symbol=symbol, record=record))
+            return
+        if path == "/api/market/structure":
+            query = parse_qs(parsed.query)
+            symbol = query.get("symbol", [None])[0]
+            timeframe = query.get("timeframe", [None])[0]
+            count = int(query.get("count", ["120"])[0])
+            self._send_json(
+                {
+                    "marketStructure": build_market_structure_snapshot(
+                        PROJECT_ROOT / "config/demo.yaml",
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        count=count,
+                    )
+                }
+            )
             return
         self._send_static(path)
 
@@ -235,12 +252,15 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
 
     def _send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, indent=2).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except self._client_disconnect_errors:
+            return
 
     def _read_json_body(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
@@ -376,12 +396,15 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
 
         body = target.read_bytes()
         content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except self._client_disconnect_errors:
+            return
 
 
 def run(host: str = "127.0.0.1", port: int = 8080) -> None:
