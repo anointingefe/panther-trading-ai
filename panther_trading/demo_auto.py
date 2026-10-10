@@ -76,8 +76,23 @@ class DemoAutoTrader:
     def run_cycle(self) -> DemoAutoCycle:
         started_at = datetime.now(timezone.utc)
         config = load_config(self.config_path)
-        broker = self._broker or create_broker(self.broker_kind)
-        status = broker.get_status()
+        try:
+            broker = self._broker or create_broker(self.broker_kind)
+            status = broker.get_status()
+        except Exception as exc:
+            cycle = DemoAutoCycle(
+                status="blocked",
+                started_at=started_at.isoformat(),
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                broker_mode="unavailable",
+                scanned=0,
+                placed=0,
+                blocked=1,
+                decisions=(),
+                reasons=(f"Broker setup failed: {exc}",),
+            )
+            self._write_state(cycle)
+            return cycle
         mode = str(status.mode).lower()
         if mode not in config.demo_auto.allowed_account_modes:
             cycle = DemoAutoCycle(
@@ -113,9 +128,13 @@ class DemoAutoTrader:
         symbols = self._symbols_to_scan(config, available)
         positions = self._read_positions() if self.positions_path.exists() else []
         loss_state = self._loss_state(config, positions)
+        placed_this_cycle = 0
         for symbol in symbols:
             try:
-                decisions.append(self._evaluate_symbol(config, broker, symbol, loss_state))
+                decision = self._evaluate_symbol(config, broker, symbol, loss_state, placed_this_cycle)
+                if decision.action == "placed":
+                    placed_this_cycle += 1
+                decisions.append(decision)
             except Exception as exc:
                 decisions.append(self._blocked(symbol, "hold", 0.0, f"Symbol skipped: {exc}"))
         decisions = sorted(
@@ -184,7 +203,10 @@ class DemoAutoTrader:
         broker: Broker,
         symbol: str,
         loss_state: dict[str, dict[str, Any]],
+        placed_this_cycle: int,
     ) -> DemoAutoDecision:
+        if placed_this_cycle >= config.demo_auto.max_orders_per_cycle:
+            return self._blocked(symbol, "hold", 0.0, "Maximum demo orders for this cycle reached")
         total_open = broker.count_open_positions()
         symbol_open = broker.count_open_positions(symbol)
         if total_open >= config.demo_auto.max_open_positions:
@@ -400,10 +422,14 @@ class DemoAutoTrader:
         return position_key == symbol_key or position_key.startswith(symbol_key) or symbol_key.startswith(position_key)
 
     def _write_state(self, cycle: DemoAutoCycle, running: bool = False) -> None:
+        if cycle.status == "blocked" and cycle.reasons:
+            message = f"Blocked: {cycle.reasons[0]}"
+        else:
+            message = f"Last cycle placed {cycle.placed} demo orders across {cycle.scanned} scanned markets."
         payload = {
             "running": running,
             "lastCycle": cycle.to_dict(),
-            "message": f"Last cycle placed {cycle.placed} demo orders across {cycle.scanned} scanned markets.",
+            "message": message,
         }
         self.state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
