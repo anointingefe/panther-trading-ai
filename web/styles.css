@@ -38,6 +38,7 @@ a {
   display: grid;
   grid-template-columns: 18rem minmax(0, 1fr);
   min-height: 100vh;
+  min-width: 0;
 }
 
 .sidebar {
@@ -128,7 +129,8 @@ a {
 
 .workspace {
   min-width: 0;
-  padding: clamp(1.25rem, 2vw, 2.25rem);
+  overflow-x: clip;
+  padding: clamp(1.5rem, 2.4vw, 3rem);
   max-width: 1920px;
   width: 100%;
   margin: 0 auto;
@@ -248,21 +250,21 @@ button:disabled {
 .lower-grid,
 .metrics-grid {
   display: grid;
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 
 .hero-grid {
-  grid-template-columns: minmax(22rem, 0.74fr) minmax(26rem, 1.26fr);
+  grid-template-columns: minmax(21rem, 0.68fr) minmax(0, 1.32fr);
 }
 
 .lower-grid {
-  grid-template-columns: repeat(3, minmax(22rem, 1fr));
-  margin-top: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  margin-top: 1.5rem;
 }
 
 .metrics-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 1.25rem;
+  margin-top: 1.5rem;
 }
 
 .signal-panel,
@@ -313,6 +315,11 @@ button:disabled {
   padding: 1.25rem;
 }
 
+.chart-panel {
+  padding: clamp(1.25rem, 1.6vw, 1.75rem);
+  min-width: 0;
+}
+
 .panel-head {
   display: flex;
   align-items: flex-start;
@@ -320,14 +327,67 @@ button:disabled {
   gap: 1rem;
 }
 
+.chart-controls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.chart-controls label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.chart-controls select {
+  min-height: 2.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  padding: 0 0.65rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
 .pill,
-.soft-label {
+.soft-label,
+.feed-pill {
   border-radius: 999px;
   padding: 0.35rem 0.7rem;
   color: var(--accent);
   background: rgba(124, 255, 178, 0.12);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.feed-pill {
+  position: relative;
+  padding-left: 1.45rem;
+}
+
+.feed-pill::before {
+  content: "";
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: translateY(-50%);
+  box-shadow: 0 0 16px var(--accent);
+}
+
+.feed-pill.down {
+  color: var(--danger);
+  background: rgba(255, 107, 107, 0.11);
+}
+
+.feed-pill.down::before {
+  background: var(--danger);
+  box-shadow: 0 0 16px var(--danger);
 }
 
 .signal-readout {
@@ -462,6 +522,33 @@ button:disabled {
   display: grid;
   gap: 0.8rem;
   margin-top: 1.1rem;
+}
+
+.capacity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+}
+
+.capacity-grid div {
+  padding: 0.8rem;
+  border: 1px solid rgba(124, 255, 178, 0.12);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.capacity-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.capacity-grid strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--accent);
+  font-size: 1.25rem;
 }
 
 .full-width-button {
@@ -716,9 +803,13 @@ button:disabled {
 
 .advisor-grid {
   display: grid;
-  grid-template-columns: 1.2fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.5rem), 1fr));
   gap: 0.85rem;
   margin-top: 1.15rem;
+}
+
+.advisor-panel {
+  grid-column: 1 / -1;
 }
 
 .advisor-grid section {
@@ -738,13 +829,22 @@ button:disabled {
 .advisor-grid strong {
   display: block;
   margin-top: 0.3rem;
+  overflow-wrap: anywhere;
+  line-height: 1.18;
 }
 
 .mini-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 0.5rem;
   padding: 0.35rem 0;
+}
+
+.mini-row strong,
+.mini-row span,
+.advisor-grid small {
+  overflow-wrap: anywhere;
 }
 
 .mini-row + .mini-row {
@@ -822,7 +922,7 @@ button:disabled {
 
 .chart {
   position: relative;
-  min-height: clamp(24rem, 44vh, 36rem);
+  min-height: clamp(30rem, 54vh, 44rem);
   overflow: hidden;
   border-radius: 0.75rem;
   margin-top: 1.25rem;
@@ -894,6 +994,18 @@ button:disabled {
   background: var(--accent);
   color: #031008;
   font-weight: 900;
+  transition: transform 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.price-pin.tick-up {
+  transform: translateY(-0.25rem) scale(1.06);
+  background: var(--accent-2);
+}
+
+.price-pin.tick-down {
+  transform: translateY(0.25rem) scale(1.06);
+  background: var(--danger);
+  color: #190808;
 }
 
 .structure-grid {
@@ -1038,6 +1150,17 @@ li + li {
     border-bottom: 1px solid var(--line);
   }
 
+  .hero-grid,
+  .lower-grid,
+  .metrics-grid,
+  .advisor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart {
+    min-height: 24rem;
+  }
+
   .nav-list {
     grid-template-columns: repeat(5, max-content);
     overflow-x: auto;
@@ -1048,10 +1171,26 @@ li + li {
     display: none;
   }
 
-  .hero-grid,
-  .lower-grid,
   .metrics-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 981px) and (max-width: 1280px) {
+  .app-shell {
+    grid-template-columns: 14.5rem minmax(0, 1fr);
+  }
+
+  .sidebar {
+    padding: 1rem;
+  }
+
+  .hero-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart {
+    min-height: clamp(22rem, 48vh, 34rem);
   }
 }
 
