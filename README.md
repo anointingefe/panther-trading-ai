@@ -188,6 +188,16 @@ folder, run:
 .\scripts\Start-Panther.ps1 -Broker mt5 -StartDemoLoop
 ```
 
+If Windows blocks `.ps1` scripts with an execution-policy error, use the safe
+launcher wrapper instead:
+
+```powershell
+.\scripts\Start-Panther.cmd -Broker mt5 -StartDemoLoop
+```
+
+That bypasses execution policy only for this PANTHER startup command. It does
+not change the machine-wide PowerShell policy.
+
 That fetches the latest `main`, fast-forwards the working tree, creates the
 Python virtual environment if needed, installs requirements, starts the API,
 checks `/api/health`, and starts the guarded demo loop. Use `-NoPull` when
