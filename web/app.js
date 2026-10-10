@@ -182,8 +182,10 @@ const fallbackSnapshot = {
     reasons: ["Backend config has allow_live_trading=false."]
   },
   demoLimits: {
-    maxOpenPositions: 8,
+    maxOpenPositions: 12,
+    maxOrdersPerCycle: 12,
     maxPositionsPerSymbol: 1,
+    maxSymbolsPerCycle: 96,
     coreRiskMaxOpenPositions: 3
   },
   journalEntry: null,
@@ -244,6 +246,7 @@ const pct = new Intl.NumberFormat("en-US", {
 });
 
 let currentJournalEntry = null;
+let lastChartClose = null;
 
 function setText(id, value) {
   document.getElementById(id).textContent = value;
@@ -289,6 +292,7 @@ function renderDashboard(data) {
   renderExecutionMode(data.executionMode || fallbackSnapshot.executionMode);
   renderLiveReadiness(data.liveReadiness || fallbackSnapshot.liveReadiness);
   renderLiveAuto(data.liveAuto || fallbackSnapshot.liveAuto);
+  renderDemoLimits(data.demoLimits || fallbackSnapshot.demoLimits);
   renderDemoAuto(data.demoAuto || fallbackSnapshot.demoAuto);
   renderApproval(data.journalEntry || null);
   renderPositions(data.positions || []);
@@ -345,6 +349,21 @@ function renderMarketStructure(structure) {
   setText("structure-high", formatPrice(structure.high));
   setText("structure-low", formatPrice(structure.low));
   setText("structure-range", formatPrice(structure.range));
+  const feed = document.getElementById("market-feed-status");
+  const latest = Number(structure.latest || 0);
+  const change = Number(structure.change || 0);
+  feed.textContent = `${String(structure.source || "data").toUpperCase()} ${change >= 0 ? "+" : ""}${formatPrice(change)}`;
+  feed.classList.toggle("down", change < 0);
+  feed.classList.toggle("up", change >= 0);
+  const pin = document.getElementById("structure-latest");
+  if (lastChartClose !== null && latest !== lastChartClose) {
+    pin.classList.remove("tick-up", "tick-down");
+    pin.classList.add(latest > lastChartClose ? "tick-up" : "tick-down");
+    window.setTimeout(() => pin.classList.remove("tick-up", "tick-down"), 700);
+  }
+  if (Number.isFinite(latest)) {
+    lastChartClose = latest;
+  }
 
   const line = document.getElementById("structure-line");
   const candleLayer = document.getElementById("candle-layer");
@@ -455,6 +474,12 @@ function renderDemoAuto(state) {
       `
     )
     .join("");
+}
+
+function renderDemoLimits(limits) {
+  setText("demo-limit-cycle", String(limits.maxOrdersPerCycle || 0));
+  setText("demo-limit-open", String(limits.maxOpenPositions || 0));
+  setText("demo-limit-scan", String(limits.maxSymbolsPerCycle || 0));
 }
 
 function renderLiveAuto(state) {
@@ -865,6 +890,23 @@ async function refreshSnapshot(record = true, quiet = false) {
   }
 }
 
+async function refreshMarketStructure() {
+  const selectedSymbol = document.getElementById("market-select").value || fallbackSnapshot.symbol;
+  const selectedTimeframe = document.getElementById("timeframe-select").value || "M15";
+  try {
+    const response = await fetch(
+      `/api/market/structure?symbol=${encodeURIComponent(selectedSymbol)}&timeframe=${encodeURIComponent(selectedTimeframe)}&count=160`,
+      { cache: "no-store" }
+    );
+    const payload = await readJsonResponse(response, "Market feed unavailable");
+    renderMarketStructure(payload.marketStructure || fallbackSnapshot.marketStructure);
+  } catch (error) {
+    const feed = document.getElementById("market-feed-status");
+    feed.textContent = error instanceof Error ? "Feed paused" : "Feed unavailable";
+    feed.classList.remove("up", "down");
+  }
+}
+
 async function refreshPositions() {
   try {
     const response = await fetch("/api/positions", { cache: "no-store" });
@@ -1012,7 +1054,65 @@ function renderMarketUniverse(markets) {
     .join("");
 }
 
+function setupSidebarNavigation() {
+  const links = Array.from(document.querySelectorAll(".nav-list a[href^='#'], .brand[href^='#']"));
+  const navLinks = Array.from(document.querySelectorAll(".nav-list a[href^='#']"));
+  const targets = navLinks
+    .map((link) => document.querySelector(link.getAttribute("href")))
+    .filter(Boolean);
+
+  function setActive(hash) {
+    navLinks.forEach((link) => {
+      const isActive = link.getAttribute("href") === hash;
+      link.classList.toggle("active", isActive);
+      if (isActive) {
+        link.setAttribute("aria-current", "page");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+  }
+
+  links.forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const hash = link.getAttribute("href");
+      const target = hash ? document.querySelector(hash) : null;
+      if (!target) {
+        return;
+      }
+
+      event.preventDefault();
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.focus({ preventScroll: true });
+      history.replaceState(null, "", hash);
+      setActive(hash);
+    });
+  });
+
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visible) {
+          setActive(`#${visible.target.id}`);
+        }
+      },
+      { rootMargin: "-20% 0px -65% 0px", threshold: [0.1, 0.25, 0.5] }
+    );
+
+    targets.forEach((target) => observer.observe(target));
+  }
+
+  if (location.hash && document.querySelector(location.hash)) {
+    setActive(location.hash);
+  }
+}
+
 document.getElementById("run-scan").addEventListener("click", refreshSnapshot);
+document.getElementById("market-select").addEventListener("change", () => refreshSnapshot(false, false));
+document.getElementById("timeframe-select").addEventListener("change", refreshMarketStructure);
 document.getElementById("approve-signal").addEventListener("click", () => submitDecision("approved"));
 document.getElementById("reject-signal").addEventListener("click", () => submitDecision("rejected"));
 document.getElementById("sync-mt5-history").addEventListener("click", syncMt5History);
@@ -1048,9 +1148,12 @@ document.getElementById("emergency-stop").addEventListener("click", () => {
   });
 });
 
+setupSidebarNavigation();
 renderDashboard(fallbackSnapshot);
 refreshSnapshot();
 refreshJournal();
 refreshDemoAuto();
+refreshMarketStructure();
+setInterval(refreshMarketStructure, 5000);
 setInterval(refreshDemoAuto, 15000);
 setInterval(() => refreshSnapshot(false, true), 30000);
