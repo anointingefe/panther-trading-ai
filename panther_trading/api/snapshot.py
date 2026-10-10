@@ -145,7 +145,9 @@ def build_dashboard_snapshot(
         "liveAuto": LiveAutoTrader(config_path, DEFAULT_POSITIONS).status(),
         "demoLimits": {
             "maxOpenPositions": config.demo_auto.max_open_positions,
+            "maxOrdersPerCycle": config.demo_auto.max_orders_per_cycle,
             "maxPositionsPerSymbol": config.demo_auto.max_positions_per_symbol,
+            "maxSymbolsPerCycle": config.demo_auto.max_symbols_per_cycle,
             "coreRiskMaxOpenPositions": config.risk.max_open_positions,
         },
         "research": research,
@@ -180,6 +182,30 @@ def build_dashboard_snapshot(
         entry = journal.record_signal(snapshot)
         snapshot["journalEntry"] = entry.__dict__
     return snapshot
+
+
+def build_market_structure_snapshot(
+    config_path: str | Path = "config/demo.yaml",
+    symbol: str | None = None,
+    timeframe: str | None = None,
+    count: int = 120,
+) -> dict[str, Any]:
+    config = load_config(config_path)
+    simulator = create_broker("simulated")
+    market_broker, market_source, market_error = _market_data_broker(simulator)
+    active_symbol = (symbol or config.app.symbol).upper()
+    active_timeframe = (timeframe or config.app.timeframe).upper()
+    candles, source, candle_error = _safe_candles(
+        market_broker,
+        simulator,
+        active_symbol,
+        active_timeframe,
+        max(min(count, 500), 20),
+        market_source,
+    )
+    structure = _market_structure(active_symbol, active_timeframe, candles, source)
+    structure["errors"] = [item for item in (market_error, candle_error) if item]
+    return structure
 
 
 def _market_data_broker(simulator: Any) -> tuple[Any, str, str | None]:
