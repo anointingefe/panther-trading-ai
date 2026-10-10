@@ -102,6 +102,15 @@ broker adapter explicitly:
 PANTHER_BROKER=mt5 python3 -m panther_trading.api.server --port 8080
 ```
 
+On the Windows trading machine, install the optional MT5 Python bridge first:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-mt5.txt
+```
+
+The one-command Windows launcher does this automatically whenever it is started
+with `-Broker mt5`.
+
 The dashboard exposes broker health at:
 
 - `GET /api/broker/status`
@@ -199,9 +208,10 @@ That bypasses execution policy only for this PANTHER startup command. It does
 not change the machine-wide PowerShell policy.
 
 That fetches the latest `main`, fast-forwards the working tree, creates the
-Python virtual environment if needed, installs requirements, starts the API,
-checks `/api/health`, and starts the guarded demo loop. Use `-NoPull` when
-working offline. The script does not unlock live trading.
+Python virtual environment if needed, installs requirements, installs the MT5
+Python bridge when `-Broker mt5` is selected, starts the API, checks
+`/api/health`, and starts the guarded demo loop. Use `-NoPull` when working
+offline. The script does not unlock live trading.
 
 To start it automatically when Windows logs in, run PowerShell once as the
 user account that should own the process:
