@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 from panther_trading.brokers.simulated import SimulatedBroker
 from panther_trading.config import load_config
-from panther_trading.demo_auto import DemoAutoTrader
-from panther_trading.models import SignalSide, TradeSignal
+from panther_trading.demo_auto import DemoAutoDecision, DemoAutoTrader
+from panther_trading.models import OrderRequest, SignalSide, TradeSignal
 
 
 class RealModeBroker(SimulatedBroker):
@@ -26,6 +26,24 @@ def test_demo_auto_refuses_real_account_mode(tmp_path) -> None:
     assert cycle.scanned == 0
     assert cycle.placed == 0
     assert "real" in cycle.reasons[0]
+
+
+def test_demo_auto_records_broker_setup_failure(tmp_path) -> None:
+    state_path = tmp_path / "demo_auto_state.json"
+    trader = DemoAutoTrader(
+        "config/demo.yaml",
+        state_path,
+        broker_kind="missing-broker",
+    )
+
+    cycle = trader.run_cycle()
+    state = trader.latest_state()
+
+    assert cycle.status == "blocked"
+    assert cycle.broker_mode == "unavailable"
+    assert cycle.scanned == 0
+    assert "Broker setup failed" in cycle.reasons[0]
+    assert state["message"].startswith("Blocked: Broker setup failed")
 
 
 def test_demo_auto_scans_demo_safe_broker_and_writes_state(tmp_path) -> None:
@@ -241,4 +259,46 @@ def test_demo_auto_uses_separate_demo_position_limit(tmp_path) -> None:
     config = load_config("config/demo.yaml")
 
     assert config.risk.max_open_positions == 3
-    assert config.demo_auto.max_open_positions == 8
+    assert config.demo_auto.max_open_positions == 12
+    assert config.demo_auto.max_orders_per_cycle == 12
+
+
+class AlwaysStrongBroker(SimulatedBroker):
+    def list_symbols(self):
+        return [f"TEST{i}" for i in range(20)]
+
+
+def test_demo_auto_never_exceeds_cycle_order_cap(tmp_path) -> None:
+    class StrongSignalTrader(DemoAutoTrader):
+        def _evaluate_symbol(self, config, broker, symbol, loss_state, placed_this_cycle):
+            if placed_this_cycle >= config.demo_auto.max_orders_per_cycle:
+                return self._blocked(symbol, "hold", 0.0, "Maximum demo orders for this cycle reached")
+            broker.place_order(
+                OrderRequest(
+                    symbol=symbol,
+                    side=SignalSide.BUY,
+                    volume=config.demo_auto.demo_order_volume,
+                    entry=1.0,
+                    stop_loss=0.99,
+                    take_profit=1.02,
+                    comment="test",
+                )
+            )
+            return DemoAutoDecision(
+                symbol=symbol,
+                action="placed",
+                side="buy",
+                confidence=0.9,
+                reason="test order",
+            )
+
+    trader = StrongSignalTrader(
+        "config/demo.yaml",
+        tmp_path / "demo_auto_state.json",
+        broker=AlwaysStrongBroker(),
+    )
+
+    cycle = trader.run_cycle()
+
+    assert cycle.placed == load_config("config/demo.yaml").demo_auto.max_orders_per_cycle
+    assert any("Maximum demo orders" in decision.reason for decision in cycle.decisions)
