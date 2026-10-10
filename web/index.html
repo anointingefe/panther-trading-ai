@@ -9,7 +9,7 @@
   <body>
     <main class="app-shell">
       <aside class="sidebar" aria-label="Primary">
-        <a class="brand" href="#" aria-label="PANTHER dashboard home">
+        <a class="brand" href="#command-section" aria-label="PANTHER dashboard home">
           <span class="brand-mark">P</span>
           <span>
             <strong>PANTHER</strong>
@@ -18,11 +18,11 @@
         </a>
 
         <nav class="nav-list" aria-label="Dashboard sections">
-          <a class="active" href="#">Command</a>
-          <a href="#">Signals</a>
-          <a href="#">Backtests</a>
-          <a href="#">Risk Rules</a>
-          <a href="#">Broker</a>
+          <a class="active" href="#command-section" aria-current="page">Command</a>
+          <a href="#signals-section">Signals</a>
+          <a href="#backtests-section">Backtests</a>
+          <a href="#risk-section">Risk Rules</a>
+          <a href="#broker-section">Broker</a>
         </nav>
 
         <section class="guard-card">
@@ -33,7 +33,7 @@
       </aside>
 
       <section class="workspace">
-        <header class="topbar">
+        <header class="topbar" id="command-section" tabindex="-1">
           <div>
             <p class="eyebrow">Market command center</p>
             <h1>Trade only when the evidence is strong.</h1>
@@ -52,7 +52,7 @@
           </div>
         </header>
 
-        <section class="hero-grid" aria-label="Trading overview">
+        <section class="hero-grid" id="signals-section" aria-label="Trading overview" tabindex="-1">
           <article class="signal-panel">
             <div class="panel-head">
               <div>
@@ -100,7 +100,22 @@
                 <p class="eyebrow">Market structure</p>
                 <h2 id="structure-symbol">Live Scan</h2>
               </div>
-              <span class="soft-label" id="structure-source">M15</span>
+              <div class="chart-controls">
+                <span class="feed-pill" id="market-feed-status">Live feed</span>
+                <label>
+                  <span>Timeframe</span>
+                  <select id="timeframe-select" aria-label="Chart timeframe">
+                    <option value="M1">M1</option>
+                    <option value="M5">M5</option>
+                    <option value="M15" selected>M15</option>
+                    <option value="M30">M30</option>
+                    <option value="H1">H1</option>
+                    <option value="H4">H4</option>
+                    <option value="D1">D1</option>
+                  </select>
+                </label>
+                <span class="soft-label" id="structure-source">M15</span>
+              </div>
             </div>
             <div class="chart" id="structure-chart">
               <svg id="structure-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -167,7 +182,7 @@
             </div>
           </article>
 
-          <article class="broker-panel">
+          <article class="broker-panel" id="broker-section" tabindex="-1">
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Broker</p>
@@ -207,7 +222,7 @@
             <div class="positions-list" id="positions-list"></div>
           </article>
 
-          <article class="live-panel">
+          <article class="live-panel" id="risk-section" tabindex="-1">
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Live system</p>
@@ -237,6 +252,20 @@
             <p class="approval-copy" id="demo-auto-message">
               Connected, but the demo auto runner has not run yet.
             </p>
+            <div class="capacity-grid" aria-label="Demo auto capacity">
+              <div>
+                <span>Cycle Orders</span>
+                <strong id="demo-limit-cycle">12</strong>
+              </div>
+              <div>
+                <span>Open Cap</span>
+                <strong id="demo-limit-open">12</strong>
+              </div>
+              <div>
+                <span>Scans</span>
+                <strong id="demo-limit-scan">96</strong>
+              </div>
+            </div>
             <div class="approval-actions">
               <button class="approve-button" id="demo-auto-cycle" type="button">Run Demo Cycle</button>
               <button class="ghost-button" id="demo-auto-start" type="button">Start Loop</button>
@@ -395,7 +424,7 @@
             <div class="news-trades" id="advisor-news-trades"></div>
           </article>
 
-          <article class="research-panel">
+          <article class="research-panel" id="backtests-section" tabindex="-1">
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Research lab</p>
