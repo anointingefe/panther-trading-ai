@@ -33,6 +33,12 @@ if (-not (Test-Path $venvPython)) {
 
 & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $RepoPath "requirements.txt")
 
+if ($Broker -eq "mt5") {
+    Write-Host "Installing MetaTrader 5 Python bridge..."
+    & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $RepoPath "requirements-mt5.txt")
+    & $venvPython -c "import MetaTrader5; print('MetaTrader5 Python bridge ready')"
+}
+
 $env:PANTHER_BROKER = $Broker
 $env:PANTHER_HOST = "0.0.0.0"
 $env:PANTHER_PORT = "$Port"
