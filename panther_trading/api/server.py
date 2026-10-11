@@ -114,23 +114,29 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             symbol = query.get("symbol", [None])[0]
             record = str(query.get("record", ["true"])[0]).lower() not in {"0", "false", "no"}
-            self._send_json(build_dashboard_snapshot(PROJECT_ROOT / "config/demo.yaml", symbol=symbol, record=record))
+            try:
+                self._send_json(build_dashboard_snapshot(PROJECT_ROOT / "config/demo.yaml", symbol=symbol, record=record))
+            except Exception as exc:
+                self._send_json({"error": f"Snapshot build failed: {exc}"}, status=HTTPStatus.BAD_REQUEST)
             return
         if path == "/api/market/structure":
             query = parse_qs(parsed.query)
             symbol = query.get("symbol", [None])[0]
             timeframe = query.get("timeframe", [None])[0]
-            count = int(query.get("count", ["120"])[0])
-            self._send_json(
-                {
-                    "marketStructure": build_market_structure_snapshot(
-                        PROJECT_ROOT / "config/demo.yaml",
-                        symbol=symbol,
-                        timeframe=timeframe,
-                        count=count,
-                    )
-                }
-            )
+            try:
+                count = int(query.get("count", ["120"])[0])
+                self._send_json(
+                    {
+                        "marketStructure": build_market_structure_snapshot(
+                            PROJECT_ROOT / "config/demo.yaml",
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            count=count,
+                        )
+                    }
+                )
+            except Exception as exc:
+                self._send_json({"error": f"Market structure failed: {exc}"}, status=HTTPStatus.BAD_REQUEST)
             return
         self._send_static(path)
 
