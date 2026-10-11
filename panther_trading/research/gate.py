@@ -26,10 +26,21 @@ class StrategyTrustGate:
                 selected_strategy=best_name,
             )
 
-        selected = max(approved, key=lambda card: (card.get("profit_factor", 0), card.get("net_r", 0)))
+        selected = max(
+            approved,
+            key=lambda card: (
+                card.get("quality_score", 0),
+                card.get("profit_factor", 0),
+                card.get("net_r", 0),
+            ),
+        )
+        quality_score = float(selected.get("quality_score") or 0)
         return StrategyTrustDecision(
             allowed=True,
             status="approved",
-            reason=f"Strategy approved: {selected['name']} passed research thresholds.",
+            reason=(
+                f"Strategy approved: {selected['name']} passed research thresholds "
+                f"with quality score {quality_score:.0f}/100."
+            ),
             selected_strategy=str(selected["name"]),
         )
