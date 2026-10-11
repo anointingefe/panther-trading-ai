@@ -34,3 +34,16 @@ def test_simulated_broker_uses_asset_specific_price_ranges() -> None:
 
     assert gold > 1000
     assert bitcoin > 10000
+
+
+def test_simulated_broker_counts_positions_per_symbol() -> None:
+    from panther_trading.models import OrderRequest, SignalSide
+
+    broker = SimulatedBroker()
+    broker.place_order(OrderRequest("EURUSD", SignalSide.BUY, 0.01, 1.0, 0.99, 1.02, "test"))
+    broker.place_order(OrderRequest("GBPUSD", SignalSide.BUY, 0.01, 1.0, 0.99, 1.02, "test"))
+
+    assert broker.count_open_positions() == 2
+    assert broker.count_open_positions("EURUSD") == 1
+    assert broker.count_open_positions("GBPUSD") == 1
+    assert broker.count_open_positions("XAUUSD") == 0
