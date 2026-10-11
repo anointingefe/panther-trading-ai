@@ -234,10 +234,22 @@ class DemoAutoTrader:
             max_open_positions=config.demo_auto.max_open_positions,
             max_positions_per_symbol=config.demo_auto.max_positions_per_symbol,
         )
+        scout_mode = signal.confidence < config.risk.min_confidence
+        if scout_mode and signal.confidence >= config.demo_auto.scout_min_confidence:
+            demo_risk = replace(demo_risk, min_confidence=config.demo_auto.scout_min_confidence)
+            signal = replace(
+                signal,
+                rationale=(
+                    *signal.rationale,
+                    "Demo scout mode: sub-threshold setup is incubation-only and must stay out of live trading.",
+                ),
+            )
         risk = RiskManager(demo_risk).evaluate(signal, open_positions=total_open)
         if not risk.allowed:
             return self._blocked(symbol, signal.side.value, signal.confidence, risk.reason)
         volume = self._kelly_volume(config, signal)
+        if scout_mode:
+            volume = round(max(volume * config.demo_auto.scout_volume_multiplier, 0.001), 4)
 
         result = broker.place_order(
             OrderRequest(
@@ -256,7 +268,13 @@ class DemoAutoTrader:
             action=action,
             side=signal.side.value,
             confidence=signal.confidence,
-            reason="Demo incubation order placed" if action == "placed" else result.message,
+            reason=(
+                "Demo scout incubation order placed"
+                if action == "placed" and scout_mode
+                else "Demo incubation order placed"
+                if action == "placed"
+                else result.message
+            ),
             order_status=result.status.value,
             order_message=result.message,
             broker_order_id=result.broker_order_id,
