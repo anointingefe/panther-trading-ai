@@ -34,6 +34,8 @@ demo_auto:
   max_open_positions: 12
   max_positions_per_symbol: 1
   demo_order_volume: 0.01
+  scout_min_confidence: 0.48
+  scout_volume_multiplier: 0.35
   loss_cooldown_hours: 6
   max_consecutive_symbol_losses: 1
   volatility_spike_multiplier: 2.5
