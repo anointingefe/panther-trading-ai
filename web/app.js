@@ -276,6 +276,21 @@ async function readJsonResponse(response, fallbackMessage) {
   return payload;
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Scan timed out. Restart PANTHER or switch to simulated broker if MT5 is not responding.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function renderDashboard(data) {
   setText("signal-symbol", data.symbol);
   setText("mode-pill", data.mode);
@@ -881,25 +896,29 @@ async function refreshSnapshot(record = true, quiet = false) {
   const selectedSymbol = document.getElementById("market-select").value || fallbackSnapshot.symbol;
   if (!quiet) {
     setLoading(true);
+    setText("risk-banner", "SCANNING: requesting fresh broker candles and research...");
   }
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `/api/snapshot?symbol=${encodeURIComponent(selectedSymbol)}&record=${record ? "true" : "false"}`,
-      { cache: "no-store" }
+      { cache: "no-store" },
+      25000
     );
-    if (!response.ok) {
-      throw new Error(`Snapshot request failed: ${response.status}`);
-    }
-    const data = await response.json();
+    const data = await readJsonResponse(response, "Snapshot request failed");
     renderDashboard(data);
     await refreshJournal();
     await refreshPositions();
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown dashboard error";
     renderDashboard({
       ...fallbackSnapshot,
+      order: {
+        ...fallbackSnapshot.order,
+        message,
+      },
       activity: [
         "Backend snapshot unavailable, using local fallback data",
-        error instanceof Error ? error.message : "Unknown dashboard error",
+        message,
         ...fallbackSnapshot.activity
       ]
     });
