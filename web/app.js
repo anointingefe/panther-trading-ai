@@ -763,47 +763,51 @@ async function submitDecision(decision) {
     return;
   }
 
-  const response = await fetch("/api/journal/decision", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      id: currentJournalEntry.id,
-      decision,
-      note: `${decision} from dashboard`
-    })
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    setText("approval-copy", payload.error || "Decision failed");
-    return;
+  try {
+    const response = await fetchWithTimeout("/api/journal/decision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: currentJournalEntry.id,
+        decision,
+        note: `${decision} from dashboard`
+      })
+    }, 12000);
+    const payload = await readJsonResponse(response, "Decision failed");
+    renderApproval(payload.entry);
+    await refreshPositions();
+    await refreshJournal();
+  } catch (error) {
+    setText("approval-copy", error instanceof Error ? error.message : "Decision failed");
   }
-  renderApproval(payload.entry);
-  await refreshPositions();
-  await refreshJournal();
 }
 
 async function stopPosition(positionId, reason = "manual_stop") {
-  const response = await fetch("/api/positions/close", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: positionId, reason })
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    setText("approval-copy", payload.error || "Stop trade failed");
-    return;
+  try {
+    const response = await fetchWithTimeout("/api/positions/close", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: positionId, reason })
+    }, 12000);
+    await readJsonResponse(response, "Stop trade failed");
+    await refreshPositions();
+  } catch (error) {
+    setText("approval-copy", error instanceof Error ? error.message : "Stop trade failed");
   }
-  await refreshPositions();
 }
 
 async function emergencyStopPositions() {
-  const response = await fetch("/api/positions/close-all", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason: "emergency_stop" })
-  });
-  if (response.ok) {
-    await refreshPositions();
+  try {
+    const response = await fetchWithTimeout("/api/positions/close-all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "emergency_stop" })
+    }, 12000);
+    if (response.ok) {
+      await refreshPositions();
+    }
+  } catch (error) {
+    setText("approval-copy", error instanceof Error ? error.message : "Emergency stop failed");
   }
 }
 
@@ -813,11 +817,11 @@ async function syncMt5History() {
   button.disabled = true;
   status.textContent = "Checking MT5 history...";
   try {
-    const response = await fetch("/api/mt5/sync-history", {
+    const response = await fetchWithTimeout("/api/mt5/sync-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ days: 30 })
-    });
+    }, 25000);
     const payload = await readJsonResponse(response, "MT5 history sync failed");
     renderEdgeValidation(payload.edgeValidation || fallbackSnapshot.edgeValidation);
     await refreshPositions();
@@ -833,11 +837,11 @@ async function demoAutoAction(action) {
   const endpoint = `/api/demo-auto/${action}`;
   setText("demo-auto-message", action === "cycle" ? "Running one guarded demo cycle..." : "Updating demo loop...");
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({})
-    });
+    }, 25000);
     const payload = await readJsonResponse(response, "Demo auto action failed");
     renderDemoAuto(payload.demoAuto || fallbackSnapshot.demoAuto);
     await refreshPositions();
@@ -848,7 +852,7 @@ async function demoAutoAction(action) {
 
 async function refreshDemoAuto() {
   try {
-    const response = await fetch("/api/demo-auto/status", { cache: "no-store" });
+    const response = await fetchWithTimeout("/api/demo-auto/status", { cache: "no-store" }, 8000);
     if (!response.ok) {
       return;
     }
@@ -933,9 +937,10 @@ async function refreshMarketStructure() {
   const selectedSymbol = document.getElementById("market-select").value || fallbackSnapshot.symbol;
   const selectedTimeframe = document.getElementById("timeframe-select").value || "M15";
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `/api/market/structure?symbol=${encodeURIComponent(selectedSymbol)}&timeframe=${encodeURIComponent(selectedTimeframe)}&count=160`,
-      { cache: "no-store" }
+      { cache: "no-store" },
+      12000
     );
     const payload = await readJsonResponse(response, "Market feed unavailable");
     renderMarketStructure(payload.marketStructure || fallbackSnapshot.marketStructure);
@@ -948,7 +953,7 @@ async function refreshMarketStructure() {
 
 async function refreshPositions() {
   try {
-    const response = await fetch("/api/positions", { cache: "no-store" });
+    const response = await fetchWithTimeout("/api/positions", { cache: "no-store" }, 8000);
     if (!response.ok) {
       return;
     }
@@ -962,7 +967,7 @@ async function refreshPositions() {
 
 async function refreshExitReview() {
   try {
-    const response = await fetch("/api/exits/review", { cache: "no-store" });
+    const response = await fetchWithTimeout("/api/exits/review", { cache: "no-store" }, 10000);
     if (!response.ok) {
       return;
     }
@@ -978,11 +983,11 @@ async function applyExitDecisions() {
   button.disabled = true;
   button.textContent = "Applying...";
   try {
-    const response = await fetch("/api/exits/apply", {
+    const response = await fetchWithTimeout("/api/exits/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({})
-    });
+    }, 12000);
     const payload = await readJsonResponse(response, "Exit decisions failed");
     renderExitReview(payload.exitReview || fallbackSnapshot.exitReview);
     await refreshPositions();
@@ -1033,7 +1038,7 @@ function renderPositions(positions) {
 
 async function refreshJournal() {
   try {
-    const response = await fetch("/api/journal", { cache: "no-store" });
+    const response = await fetchWithTimeout("/api/journal", { cache: "no-store" }, 8000);
     if (!response.ok) {
       return;
     }
