@@ -19,6 +19,9 @@ class StrategyCandidate:
     config: StrategyConfig
     minimum_trades: int = 8
     minimum_profit_factor: float = 1.15
+    minimum_win_rate: float = 0.38
+    minimum_average_r: float = 0.05
+    minimum_quality_score: float = 65.0
     maximum_drawdown_r: float = 6.0
 
 
@@ -43,6 +46,9 @@ class StrategyScorecard:
     out_of_sample_net_r: float
     average_confidence: float
     precision_grade: str
+    quality_score: float
+    evidence_level: str
+    reasons_not_to_enter: tuple[str, ...]
     notes: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,7 +77,15 @@ class StrategyResearchLab:
             self._score_candidate(candidate, symbol, market_candles, condition)
             for candidate in self._candidates()
         ]
-        scorecards.sort(key=lambda item: (item.status == "approved", item.profit_factor, item.net_r), reverse=True)
+        scorecards.sort(
+            key=lambda item: (
+                item.status == "approved",
+                item.quality_score,
+                item.profit_factor,
+                item.net_r,
+            ),
+            reverse=True,
+        )
         return {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -153,16 +167,59 @@ class StrategyResearchLab:
         profit_factor = round(positive_r / negative_r, 4) if negative_r else round(positive_r, 4)
         max_drawdown = self._max_drawdown(trade_results)
         average_confidence = round(fmean(confidences), 4) if confidences else 0.0
-        precision_grade = self._precision_grade(trades, profit_factor, max_drawdown, net_r, out_of_sample_net_r)
-        status = self._status(candidate, trades, profit_factor, max_drawdown, net_r, out_of_sample_net_r)
-        notes = self._notes(
-            candidate,
+        quality_score = self._quality_score(
+            trades=trades,
+            win_rate=win_rate,
+            profit_factor=profit_factor,
+            max_drawdown=max_drawdown,
+            net_r=net_r,
+            average_r=average_r,
+            out_of_sample_net_r=out_of_sample_net_r,
+        )
+        evidence_level = self._evidence_level(trades, out_of_sample, quality_score)
+        reasons_not_to_enter = self._reasons_not_to_enter(
+            candidate=candidate,
+            trades=trades,
+            win_rate=win_rate,
+            profit_factor=profit_factor,
+            max_drawdown=max_drawdown,
+            net_r=net_r,
+            average_r=average_r,
+            out_of_sample_net_r=out_of_sample_net_r,
+            quality_score=quality_score,
+        )
+        precision_grade = self._precision_grade(
             trades,
             profit_factor,
             max_drawdown,
             net_r,
+            average_r,
             out_of_sample_net_r,
+            quality_score,
+        )
+        status = self._status(
+            candidate,
+            trades,
+            win_rate,
+            profit_factor,
+            max_drawdown,
+            net_r,
+            average_r,
+            out_of_sample_net_r,
+            quality_score,
+        )
+        notes = self._notes(
+            candidate,
+            trades,
+            win_rate,
+            profit_factor,
+            max_drawdown,
+            net_r,
+            average_r,
+            out_of_sample_net_r,
+            quality_score,
             market_condition,
+            reasons_not_to_enter,
         )
 
         return StrategyScorecard(
@@ -185,6 +242,9 @@ class StrategyResearchLab:
             out_of_sample_net_r=out_of_sample_net_r,
             average_confidence=average_confidence,
             precision_grade=precision_grade,
+            quality_score=quality_score,
+            evidence_level=evidence_level,
+            reasons_not_to_enter=reasons_not_to_enter,
             notes=notes,
         )
 
@@ -246,23 +306,60 @@ class StrategyResearchLab:
         self,
         candidate: StrategyCandidate,
         trades: int,
+        win_rate: float,
         profit_factor: float,
         max_drawdown: float,
         net_r: float,
+        average_r: float,
         out_of_sample_net_r: float,
+        quality_score: float,
     ) -> str:
         if trades < candidate.minimum_trades:
             return "incubating"
         if (
             profit_factor >= candidate.minimum_profit_factor
+            and win_rate >= candidate.minimum_win_rate
             and max_drawdown <= candidate.maximum_drawdown_r
             and net_r > 0
+            and average_r >= candidate.minimum_average_r
             and out_of_sample_net_r > 0
+            and quality_score >= candidate.minimum_quality_score
         ):
             return "approved"
-        if net_r > 0 and max_drawdown <= candidate.maximum_drawdown_r * 1.4:
+        if (
+            net_r > 0
+            and out_of_sample_net_r >= 0
+            and quality_score >= candidate.minimum_quality_score * 0.72
+            and max_drawdown <= candidate.maximum_drawdown_r * 1.4
+        ):
             return "watch"
         return "rejected"
+
+    def _quality_score(
+        self,
+        trades: int,
+        win_rate: float,
+        profit_factor: float,
+        max_drawdown: float,
+        net_r: float,
+        average_r: float,
+        out_of_sample_net_r: float,
+    ) -> float:
+        sample_score = min(trades / 30, 1.0) * 20
+        win_score = min(max(win_rate, 0.0) / 0.55, 1.0) * 15
+        profit_score = min(max(profit_factor - 1.0, 0.0) / 1.0, 1.0) * 20
+        net_score = min(max(net_r, 0.0) / 12.0, 1.0) * 15
+        average_score = min(max(average_r, 0.0) / 0.35, 1.0) * 10
+        out_of_sample_score = min(max(out_of_sample_net_r, 0.0) / 4.0, 1.0) * 15
+        drawdown_penalty = min(max(max_drawdown - 3.0, 0.0) / 6.0, 1.0) * 18
+        return round(max(sample_score + win_score + profit_score + net_score + average_score + out_of_sample_score - drawdown_penalty, 0.0), 2)
+
+    def _evidence_level(self, trades: int, out_of_sample: list[float], quality_score: float) -> str:
+        if trades >= 30 and len(out_of_sample) >= 8 and quality_score >= 75:
+            return "strong"
+        if trades >= 14 and len(out_of_sample) >= 4 and quality_score >= 55:
+            return "developing"
+        return "thin"
 
     def _precision_grade(
         self,
@@ -270,39 +367,89 @@ class StrategyResearchLab:
         profit_factor: float,
         max_drawdown: float,
         net_r: float,
+        average_r: float,
         out_of_sample_net_r: float,
+        quality_score: float,
     ) -> str:
         if trades < 8:
             return "insufficient_sample"
-        if profit_factor >= 1.5 and max_drawdown <= 4 and net_r > 0 and out_of_sample_net_r > 0:
+        if (
+            profit_factor >= 1.5
+            and max_drawdown <= 4
+            and net_r > 0
+            and average_r >= 0.12
+            and out_of_sample_net_r > 0
+            and quality_score >= 75
+        ):
             return "high"
-        if profit_factor >= 1.15 and net_r > 0 and out_of_sample_net_r >= 0:
+        if profit_factor >= 1.15 and net_r > 0 and average_r > 0 and out_of_sample_net_r >= 0 and quality_score >= 50:
             return "medium"
         return "low"
+
+    def _reasons_not_to_enter(
+        self,
+        candidate: StrategyCandidate,
+        trades: int,
+        win_rate: float,
+        profit_factor: float,
+        max_drawdown: float,
+        net_r: float,
+        average_r: float,
+        out_of_sample_net_r: float,
+        quality_score: float,
+    ) -> tuple[str, ...]:
+        reasons = []
+        if trades < candidate.minimum_trades:
+            reasons.append(f"Only {trades} qualified backtest trades; needs at least {candidate.minimum_trades}.")
+        if win_rate < candidate.minimum_win_rate:
+            reasons.append(f"Win rate {win_rate:.0%} is below the {candidate.minimum_win_rate:.0%} minimum.")
+        if profit_factor < candidate.minimum_profit_factor:
+            reasons.append(f"Profit factor {profit_factor:.2f} is below the {candidate.minimum_profit_factor:.2f} threshold.")
+        if max_drawdown > candidate.maximum_drawdown_r:
+            reasons.append(f"Max drawdown {max_drawdown:.2f}R exceeds the {candidate.maximum_drawdown_r:.2f}R limit.")
+        if net_r <= 0:
+            reasons.append("Net R is not positive after execution costs.")
+        if average_r < candidate.minimum_average_r:
+            reasons.append(f"Average R {average_r:.2f} is below the {candidate.minimum_average_r:.2f} minimum.")
+        if out_of_sample_net_r <= 0:
+            reasons.append("Recent out-of-sample R is not positive.")
+        if quality_score < candidate.minimum_quality_score:
+            reasons.append(f"Quality score {quality_score:.0f}/100 is below the {candidate.minimum_quality_score:.0f}/100 approval bar.")
+        return tuple(reasons[:4])
 
     def _notes(
         self,
         candidate: StrategyCandidate,
         trades: int,
+        win_rate: float,
         profit_factor: float,
         max_drawdown: float,
         net_r: float,
+        average_r: float,
         out_of_sample_net_r: float,
+        quality_score: float,
         market_condition: str,
+        reasons_not_to_enter: tuple[str, ...],
     ) -> tuple[str, ...]:
         notes = [f"Tested in {market_condition} conditions."]
         if trades < candidate.minimum_trades:
             notes.append("Needs more trades before promotion.")
+        if win_rate >= candidate.minimum_win_rate:
+            notes.append("Win rate is above the strategy approval floor.")
         if profit_factor < candidate.minimum_profit_factor:
             notes.append("Profit factor is below approval threshold.")
         if max_drawdown > candidate.maximum_drawdown_r:
             notes.append("Drawdown exceeds strategy limit.")
-        if net_r > 0:
-            notes.append("Net R is positive after spread and slippage cost assumptions.")
+        if net_r > 0 and average_r > 0:
+            notes.append("Net R and average R are positive after spread and slippage assumptions.")
         else:
             notes.append("Net R is not strong enough for approval.")
         if out_of_sample_net_r <= 0:
             notes.append("Recent out-of-sample R is not positive.")
+        if quality_score >= candidate.minimum_quality_score:
+            notes.append(f"Quality score passed at {quality_score:.0f}/100.")
+        elif reasons_not_to_enter:
+            notes.append(f"Primary rejection reason: {reasons_not_to_enter[0]}")
         return tuple(notes)
 
     def _summary(self, scorecards: list[StrategyScorecard]) -> dict[str, Any]:
@@ -316,4 +463,6 @@ class StrategyResearchLab:
             "rejected": rejected,
             "bestStrategy": best.name if best else None,
             "bestNetR": best.net_r if best else 0,
+            "bestQuality": best.quality_score if best else 0,
+            "bestEvidence": best.evidence_level if best else "thin",
         }
