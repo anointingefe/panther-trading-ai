@@ -68,7 +68,9 @@ class SimulatedBroker(Broker):
         return [item.symbol for item in DEFAULT_MARKET_UNIVERSE]
 
     def count_open_positions(self, symbol: str | None = None) -> int:
-        return len(self.orders)
+        if symbol is None:
+            return len(self.orders)
+        return len([order for order in self.orders if order.symbol.upper() == symbol.upper()])
 
     def place_order(self, request: OrderRequest) -> OrderResult:
         self.orders.append(request)
