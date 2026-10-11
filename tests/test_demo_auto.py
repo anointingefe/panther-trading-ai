@@ -261,6 +261,7 @@ def test_demo_auto_uses_separate_demo_position_limit(tmp_path) -> None:
     assert config.risk.max_open_positions == 3
     assert config.demo_auto.max_open_positions == 12
     assert config.demo_auto.max_orders_per_cycle == 12
+    assert config.demo_auto.scout_min_confidence == 0.48
 
 
 class AlwaysStrongBroker(SimulatedBroker):
