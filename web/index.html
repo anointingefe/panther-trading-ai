@@ -102,6 +102,7 @@
               </div>
               <div class="chart-controls">
                 <span class="feed-pill" id="market-feed-status">Live feed</span>
+                <span class="soft-label live-time" id="structure-updated">Waiting</span>
                 <label>
                   <span>Timeframe</span>
                   <select id="timeframe-select" aria-label="Chart timeframe">
@@ -118,6 +119,7 @@
               </div>
             </div>
             <div class="chart" id="structure-chart">
+              <span class="session-line" aria-hidden="true"></span>
               <svg id="structure-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 <g id="candle-layer"></g>
                 <polyline id="structure-line" points=""></polyline>
