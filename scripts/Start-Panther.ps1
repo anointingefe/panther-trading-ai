@@ -43,6 +43,19 @@ $env:PANTHER_BROKER = $Broker
 $env:PANTHER_HOST = "0.0.0.0"
 $env:PANTHER_PORT = "$Port"
 
+try {
+    $portProbe = [System.Net.Sockets.TcpClient]::new()
+    $connection = $portProbe.BeginConnect("127.0.0.1", $Port, $null, $null)
+    if ($connection.AsyncWaitHandle.WaitOne(500, $false)) {
+        $portProbe.EndConnect($connection)
+        $portProbe.Close()
+        throw "Port $Port is already in use. Close the old PANTHER PowerShell window with Ctrl+C, then run this launcher again. This prevents your browser from talking to stale backend code."
+    }
+    $portProbe.Close()
+} catch [System.Net.Sockets.SocketException] {
+    # No listener is active on this port, so it is safe to start PANTHER.
+}
+
 $serverArgs = @("-m", "panther_trading.api.server", "--host", "0.0.0.0", "--port", "$Port")
 $server = Start-Process `
     -FilePath $venvPython `
