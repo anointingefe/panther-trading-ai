@@ -20,7 +20,10 @@ class RiskManager:
         if signal.side == SignalSide.HOLD:
             return RiskDecision(False, "Signal is hold")
         if signal.confidence < self.config.min_confidence:
-            return RiskDecision(False, "Signal confidence is below minimum")
+            return RiskDecision(
+                False,
+                f"Signal confidence {signal.confidence:.0%} is below minimum {self.config.min_confidence:.0%}",
+            )
         if open_positions >= self.config.max_open_positions:
             return RiskDecision(False, "Maximum open positions reached")
 
