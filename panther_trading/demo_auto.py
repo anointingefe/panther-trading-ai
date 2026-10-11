@@ -462,7 +462,12 @@ class DemoAutoRunner:
 
     def run_once(self) -> dict[str, Any]:
         cycle = self.trader.run_cycle()
-        return {"running": False, "lastCycle": cycle.to_dict(), "message": "Manual demo cycle completed."}
+        message = (
+            f"Blocked: {cycle.reasons[0]}"
+            if cycle.status == "blocked" and cycle.reasons
+            else "Manual demo cycle completed."
+        )
+        return {"running": False, "lastCycle": cycle.to_dict(), "message": message}
 
     def _loop(self) -> None:
         while not self._stop.is_set():
