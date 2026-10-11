@@ -366,6 +366,11 @@ function renderMarketStructure(structure) {
   setText("structure-high", formatPrice(structure.high));
   setText("structure-low", formatPrice(structure.low));
   setText("structure-range", formatPrice(structure.range));
+  setText("structure-updated", `Updated ${new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  })}`);
   const feed = document.getElementById("market-feed-status");
   const latest = Number(structure.latest || 0);
   const change = Number(structure.change || 0);
@@ -384,6 +389,7 @@ function renderMarketStructure(structure) {
 
   const line = document.getElementById("structure-line");
   const candleLayer = document.getElementById("candle-layer");
+  const chart = document.getElementById("structure-chart");
   candleLayer.innerHTML = "";
   if (!closes.length && !candles.length) {
     line.setAttribute("points", "");
@@ -407,9 +413,10 @@ function renderMarketStructure(structure) {
         const bullish = Number(candle.close) >= Number(candle.open);
         const top = Math.min(open, close);
         const height = Math.max(Math.abs(close - open), 0.65);
+        const latestClass = index === candles.length - 1 ? " latest-candle" : "";
         return `
-          <line class="candle-wick ${bullish ? "up" : "down"}" x1="${x.toFixed(2)}" y1="${high.toFixed(2)}" x2="${x.toFixed(2)}" y2="${low.toFixed(2)}"></line>
-          <rect class="candle-body ${bullish ? "up" : "down"}" x="${(x - width / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${width.toFixed(2)}" height="${height.toFixed(2)}"></rect>
+          <line class="candle-wick ${bullish ? "up" : "down"}${latestClass}" x1="${x.toFixed(2)}" y1="${high.toFixed(2)}" x2="${x.toFixed(2)}" y2="${low.toFixed(2)}"></line>
+          <rect class="candle-body ${bullish ? "up" : "down"}${latestClass}" x="${(x - width / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${width.toFixed(2)}" height="${height.toFixed(2)}"></rect>
         `;
       })
       .join("");
@@ -422,6 +429,8 @@ function renderMarketStructure(structure) {
     })
     .join(" ");
   line.setAttribute("points", points);
+  chart.classList.remove("chart-refreshing");
+  window.requestAnimationFrame(() => chart.classList.add("chart-refreshing"));
 }
 
 function renderEdgeValidation(report) {
