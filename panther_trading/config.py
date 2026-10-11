@@ -51,6 +51,8 @@ class DemoAutoConfig:
     max_open_positions: int = 12
     max_positions_per_symbol: int = 1
     demo_order_volume: float = 0.01
+    scout_min_confidence: float = 0.48
+    scout_volume_multiplier: float = 0.35
     allowed_account_modes: tuple[str, ...] = ("demo", "contest", "paper")
     loss_cooldown_hours: int = 6
     max_consecutive_symbol_losses: int = 1
