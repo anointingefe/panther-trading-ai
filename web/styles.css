@@ -208,6 +208,19 @@ h2 {
   color: var(--text);
 }
 
+.market-picker select option,
+.market-picker select optgroup,
+.chart-controls select option {
+  background: #102018;
+  color: var(--text);
+}
+
+.market-picker select option:checked,
+.chart-controls select option:checked {
+  background: #7cffb2;
+  color: #031008;
+}
+
 .mode-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1200,19 +1213,44 @@ button:disabled {
 }
 
 .market-group div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem;
 }
 
-.market-group span {
+.market-chip {
+  display: grid;
+  gap: 0.15rem;
+  min-height: 3.25rem;
+  text-align: left;
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 999px;
-  padding: 0.28rem 0.5rem;
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.65rem;
   background: rgba(255, 255, 255, 0.035);
   color: var(--text);
+}
+
+.market-chip:hover,
+.market-chip:focus-visible,
+.market-chip.active {
+  border-color: rgba(124, 255, 178, 0.42);
+  background: rgba(124, 255, 178, 0.1);
+  outline: none;
+}
+
+.market-chip strong {
   font-size: 0.75rem;
   font-weight: 800;
+}
+
+.market-chip small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
+
+.market-chip.active small {
+  color: rgba(243, 255, 247, 0.86);
 }
 
 .watch-row {
