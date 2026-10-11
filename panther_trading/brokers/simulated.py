@@ -9,34 +9,42 @@ from panther_trading.models import BrokerStatus, Candle, OrderRequest, OrderResu
 
 
 class SimulatedBroker(Broker):
-    """Deterministic broker used for safe local development and tests."""
+    """Broker used for safe local development, demo loops, and UI verification."""
 
     def __init__(self) -> None:
         self.orders: list[OrderRequest] = []
 
     def get_candles(self, symbol: str, timeframe: str, count: int) -> list[Candle]:
-        start = datetime.now(timezone.utc) - timedelta(minutes=15 * count)
+        timeframe_minutes = self._timeframe_minutes(timeframe)
+        now = datetime.now(timezone.utc)
+        start = now - timedelta(minutes=timeframe_minutes * count)
         candles: list[Candle] = []
         price = self._base_price(symbol)
         amplitude = price * 0.0017
         drift = price * 0.000018
         spread = price * 0.00075
+        seconds = now.timestamp()
+        symbol_seed = sum(ord(char) for char in symbol.upper()) % 37
+        live_phase = seconds / max(timeframe_minutes * 60, 1)
 
         for index in range(count):
-            wave = math.sin(index / 7) * amplitude
+            phase_index = index + live_phase + symbol_seed * 0.09
+            wave = math.sin(phase_index / 7) * amplitude
             trend = index * drift
-            close = price + wave + trend
-            open_price = close - spread * 0.35
-            high = close + spread
-            low = close - spread
+            pulse = math.sin(seconds / 4 + index * 0.17 + symbol_seed) * price * 0.00028
+            micro_tick = math.sin(seconds * 1.7 + symbol_seed) * price * 0.00003
+            close = price + wave + trend + pulse + micro_tick
+            open_price = close - spread * (0.22 + abs(math.sin(phase_index / 5)) * 0.34)
+            high = max(open_price, close) + spread * (0.75 + abs(math.sin(phase_index / 4)) * 0.45)
+            low = min(open_price, close) - spread * (0.75 + abs(math.cos(phase_index / 6)) * 0.45)
             candles.append(
                 Candle(
-                    time=start + timedelta(minutes=15 * index),
+                    time=start + timedelta(minutes=timeframe_minutes * index),
                     open=open_price,
                     high=high,
                     low=low,
                     close=close,
-                    volume=1000 + index * 3,
+                    volume=1000 + index * 3 + abs(math.sin(phase_index)) * 80,
                 )
             )
 
@@ -72,6 +80,18 @@ class SimulatedBroker(Broker):
 
     def open_positions(self) -> list[dict]:
         return []
+
+    def _timeframe_minutes(self, timeframe: str) -> int:
+        values = {
+            "M1": 1,
+            "M5": 5,
+            "M15": 15,
+            "M30": 30,
+            "H1": 60,
+            "H4": 240,
+            "D1": 1440,
+        }
+        return values.get(timeframe.upper(), 15)
 
     def _base_price(self, symbol: str) -> float:
         symbol = symbol.upper()
