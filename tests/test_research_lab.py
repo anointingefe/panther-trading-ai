@@ -11,6 +11,8 @@ def test_research_lab_returns_ranked_strategy_scorecards() -> None:
     assert result["marketCondition"] in {"uptrend", "downtrend", "range", "volatile", "insufficient_data"}
     assert len(result["scorecards"]) == 3
     assert result["summary"]["bestStrategy"]
+    assert "bestQuality" in result["summary"]
+    assert result["summary"]["bestEvidence"] in {"thin", "developing", "strong"}
     assert result["precisionProfile"]["spreadCostR"] > 0
 
 
@@ -23,4 +25,8 @@ def test_research_scorecards_include_risk_metrics() -> None:
     assert "max_drawdown_r" in first
     assert "out_of_sample_net_r" in first
     assert "precision_grade" in first
+    assert "quality_score" in first
+    assert 0 <= first["quality_score"] <= 100
+    assert first["evidence_level"] in {"thin", "developing", "strong"}
+    assert "reasons_not_to_enter" in first
     assert "notes" in first
