@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import queue
+import threading
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_JOURNAL = PROJECT_ROOT / "var/trade_journal.jsonl"
 DEFAULT_POSITIONS = PROJECT_ROOT / "var/paper_positions.jsonl"
 DEFAULT_DEMO_AUTO = PROJECT_ROOT / "var/demo_auto_state.json"
+BROKER_CONNECT_TIMEOUT_SECONDS = 4.0
+BROKER_READ_TIMEOUT_SECONDS = 6.0
+RESEARCH_TIMEOUT_SECONDS = 9.0
 
 
 def build_dashboard_snapshot(
@@ -210,7 +215,11 @@ def build_market_structure_snapshot(
 
 def _market_data_broker(simulator: Any) -> tuple[Any, str, str | None]:
     try:
-        broker = create_broker()
+        broker = _run_with_timeout(
+            create_broker,
+            BROKER_CONNECT_TIMEOUT_SECONDS,
+            "Configured broker connection",
+        )
         if broker.__class__ is simulator.__class__:
             return broker, "simulated", None
         return broker, "mt5", None
@@ -227,7 +236,11 @@ def _safe_candles(
     source: str,
 ) -> tuple[list[Candle], str, str | None]:
     try:
-        candles = broker.get_candles(symbol, timeframe, count)
+        candles = _run_with_timeout(
+            lambda: broker.get_candles(symbol, timeframe, count),
+            BROKER_READ_TIMEOUT_SECONDS,
+            f"{symbol} {timeframe} candle fetch",
+        )
         if candles:
             return candles, source, None
         raise RuntimeError("broker returned no candles")
@@ -245,7 +258,15 @@ def _safe_research(
     source: str,
 ) -> tuple[dict[str, Any], str, str | None]:
     try:
-        return StrategyResearchLab(broker).run(symbol, timeframe=timeframe, candles=candles), source, None
+        return (
+            _run_with_timeout(
+                lambda: StrategyResearchLab(broker).run(symbol, timeframe=timeframe, candles=candles),
+                RESEARCH_TIMEOUT_SECONDS,
+                f"{symbol} research",
+            ),
+            source,
+            None,
+        )
     except Exception as exc:
         return (
             StrategyResearchLab(fallback).run(symbol, timeframe=timeframe, candles=candles),
@@ -311,7 +332,11 @@ def _advisor_suite(
     edge_validation: dict[str, Any],
 ) -> dict[str, Any]:
     try:
-        opportunities = DailyOpportunityScanner().scan(broker, config)
+        opportunities = _run_with_timeout(
+            lambda: DailyOpportunityScanner().scan(broker, config),
+            RESEARCH_TIMEOUT_SECONDS,
+            "Opportunity scanner",
+        )
         source = "configured_broker"
     except Exception:
         opportunities = DailyOpportunityScanner().scan(fallback, config)
@@ -368,9 +393,21 @@ def _live_lock_reason(allow_live_trading: bool) -> str | None:
 
 def broker_status(kind: str | None = None) -> dict[str, Any]:
     try:
-        broker = create_broker(kind)
-        status = broker.get_status()
-        symbols = broker.list_symbols()
+        broker = _run_with_timeout(
+            lambda: create_broker(kind),
+            BROKER_CONNECT_TIMEOUT_SECONDS,
+            "Broker status connection",
+        )
+        status = _run_with_timeout(
+            broker.get_status,
+            BROKER_READ_TIMEOUT_SECONDS,
+            "Broker status read",
+        )
+        symbols = _run_with_timeout(
+            broker.list_symbols,
+            BROKER_READ_TIMEOUT_SECONDS,
+            "Broker symbol list",
+        )
         return {
             **_jsonable(status),
             "symbols_sample": symbols[:24],
@@ -389,6 +426,26 @@ def broker_status(kind: str | None = None) -> dict[str, Any]:
             "message": str(exc),
             "symbols_sample": [],
         }
+
+
+def _run_with_timeout(function: Any, timeout_seconds: float, label: str) -> Any:
+    results: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+    def target() -> None:
+        try:
+            results.put((True, function()))
+        except Exception as exc:
+            results.put((False, exc))
+
+    thread = threading.Thread(target=target, name=f"panther-timeout-{label}", daemon=True)
+    thread.start()
+    thread.join(timeout_seconds)
+    if thread.is_alive():
+        raise TimeoutError(f"{label} timed out after {timeout_seconds:.0f}s")
+    ok, value = results.get_nowait()
+    if ok:
+        return value
+    raise value
 
 
 def _jsonable(value: Any) -> Any:
