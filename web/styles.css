@@ -375,6 +375,11 @@ button:disabled {
   font-weight: 800;
 }
 
+.live-time {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .feed-pill {
   position: relative;
   padding-left: 1.45rem;
@@ -980,8 +985,7 @@ button:disabled {
   background-size: 100% 4rem, 4rem 100%;
 }
 
-.chart::before,
-.chart::after {
+.chart::before {
   content: "";
   position: absolute;
   inset: auto 0 24% 0;
@@ -990,7 +994,23 @@ button:disabled {
 }
 
 .chart::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(124, 255, 178, 0.1), transparent);
+  transform: translateX(-100%);
+}
+
+.chart.chart-refreshing::after {
+  animation: chart-sweep 900ms ease;
+}
+
+.chart .session-line {
+  position: absolute;
   inset: 42% 0 auto 0;
+  height: 1px;
   background: rgba(255, 107, 107, 0.35);
 }
 
@@ -1032,6 +1052,14 @@ button:disabled {
   filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.32));
 }
 
+.latest-candle {
+  filter: drop-shadow(0 0 14px rgba(214, 255, 127, 0.7));
+}
+
+.candle-body.latest-candle {
+  animation: latest-candle-pulse 1.4s ease-in-out infinite;
+}
+
 .price-pin {
   position: absolute;
   right: 1rem;
@@ -1066,6 +1094,40 @@ button:disabled {
   padding: 0.95rem;
   border-radius: 0.5rem;
   background: rgba(255, 255, 255, 0.04);
+}
+
+@keyframes chart-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes latest-candle-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart.chart-refreshing::after,
+  .candle-body.latest-candle {
+    animation: none;
+  }
 }
 
 .structure-grid span {
