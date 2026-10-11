@@ -1082,16 +1082,26 @@ function renderJournal(entries) {
 function renderMarketUniverse(markets) {
   const select = document.getElementById("market-select");
   const current = select.value || fallbackSnapshot.symbol;
-  select.innerHTML = markets
-    .map((market) => `<option value="${market.symbol}">${market.symbol} - ${market.name}</option>`)
-    .join("");
-  select.value = markets.some((market) => market.symbol === current) ? current : fallbackSnapshot.symbol;
 
   const groups = markets.reduce((acc, market) => {
     acc[market.group] ||= [];
     acc[market.group].push(market);
     return acc;
   }, {});
+  const selected = markets.some((market) => market.symbol === current) ? current : fallbackSnapshot.symbol;
+
+  select.innerHTML = Object.entries(groups)
+    .map(
+      ([group, items]) => `
+        <optgroup label="${group}">
+          ${items
+            .map((market) => `<option value="${market.symbol}">${market.symbol} - ${market.name}</option>`)
+            .join("")}
+        </optgroup>
+      `
+    )
+    .join("");
+  select.value = selected;
 
   document.getElementById("market-groups").innerHTML = Object.entries(groups)
     .map(
@@ -1099,7 +1109,21 @@ function renderMarketUniverse(markets) {
         <section class="market-group">
           <h3>${group}</h3>
           <div>
-            ${items.map((item) => `<span title="${item.name}">${item.symbol}</span>`).join("")}
+            ${items
+              .map(
+                (item) => `
+                  <button
+                    class="market-chip ${item.symbol === selected ? "active" : ""}"
+                    type="button"
+                    data-select-market="${item.symbol}"
+                    aria-label="Select ${item.symbol}, ${item.name}"
+                  >
+                    <strong>${item.symbol}</strong>
+                    <small>${item.name}</small>
+                  </button>
+                `
+              )
+              .join("")}
           </div>
         </section>
       `
@@ -1181,6 +1205,17 @@ document.getElementById("positions-list").addEventListener("click", (event) => {
   if (button) {
     stopPosition(button.dataset.stopPosition);
   }
+});
+document.getElementById("market-groups").addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  const button = event.target.closest("[data-select-market]");
+  if (!button) {
+    return;
+  }
+  document.getElementById("market-select").value = button.dataset.selectMarket;
+  refreshSnapshot(false, false);
 });
 document.getElementById("demo-mode").addEventListener("click", () => {
   renderExecutionMode({ active: "demo", liveEnabled: false, liveLockedReason: "Demo mode active." });
