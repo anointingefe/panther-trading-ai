@@ -23,7 +23,9 @@ const fallbackSnapshot = {
       watch: 0,
       rejected: 0,
       bestStrategy: "Waiting",
-      bestNetR: 0
+      bestNetR: 0,
+      bestQuality: 0,
+      bestEvidence: "thin"
     },
     scorecards: []
   },
@@ -667,8 +669,18 @@ function renderResearch(research) {
             <span>PF <strong>${Number(card.profit_factor).toFixed(2)}</strong></span>
             <span>Net R <strong>${Number(card.net_r).toFixed(2)}</strong></span>
             <span>OOS <strong>${Number(card.out_of_sample_net_r).toFixed(2)}R</strong></span>
+            <span>Quality <strong>${Number(card.quality_score || 0).toFixed(0)}/100</strong></span>
+            <span>Evidence <strong>${String(card.evidence_level || "thin").replaceAll("_", " ")}</strong></span>
             <span>Grade <strong>${String(card.precision_grade || "n/a").replaceAll("_", " ")}</strong></span>
           </div>
+          ${
+            card.reasons_not_to_enter?.length
+              ? `<div class="research-warning">
+                  <strong>Reasons not to enter</strong>
+                  <ul>${card.reasons_not_to_enter.map((reason) => `<li>${reason}</li>`).join("")}</ul>
+                </div>`
+              : `<p class="research-pass">No hard research rejection reason on this scorecard.</p>`
+          }
           <ul>
             ${(card.notes || []).map((note) => `<li>${note}</li>`).join("")}
           </ul>
@@ -706,17 +718,25 @@ function renderApproval(entry) {
 
   approveButton.disabled = !canDecide;
   rejectButton.disabled = !entry || ["approved", "rejected"].includes(entry.approval_status);
+  approveButton.title = canDecide ? "Approve this journaled demo signal" : "Run Scan first and wait for a pending signal.";
+  rejectButton.title = rejectButton.disabled ? "Run Scan first and wait for a journaled signal." : "Reject this journaled signal.";
 
   if (!entry) {
     setText("approval-copy", "Run a scan to create a journaled signal before any demo trade decision.");
+    approveButton.textContent = "Run Scan First";
+    rejectButton.textContent = "No Signal Yet";
     return;
   }
 
   if (entry.approval_status === "blocked_by_risk") {
     setText("approval-copy", `${entry.symbol} ${entry.side.toUpperCase()} was blocked by risk: ${entry.order_message}`);
+    approveButton.textContent = "Blocked";
+    rejectButton.textContent = "Reject Record";
     return;
   }
 
+  approveButton.textContent = entry.approval_status === "approved" ? "Approved" : "Approve";
+  rejectButton.textContent = entry.approval_status === "rejected" ? "Rejected" : "Reject";
   setText(
     "approval-copy",
     `${entry.symbol} ${entry.side.toUpperCase()} at ${entry.entry.toFixed(5)} with ${pct.format(entry.confidence)} confidence. Approval opens a protected demo trade.`
