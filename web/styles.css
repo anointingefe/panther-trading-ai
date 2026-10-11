@@ -518,6 +518,15 @@ button:disabled {
   font-weight: 900;
 }
 
+.approve-button:disabled,
+.reject-button:disabled {
+  cursor: not-allowed;
+  color: rgba(243, 255, 247, 0.48);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
 .approve-button {
   background: var(--accent);
 }
@@ -746,7 +755,7 @@ button:disabled {
 }
 
 .strategy-metrics {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 0.8rem;
 }
 
@@ -758,6 +767,31 @@ button:disabled {
 
 .strategy-card ul {
   margin-top: 0.8rem;
+}
+
+.research-warning,
+.research-pass {
+  margin-top: 0.85rem;
+  padding: 0.8rem;
+  border-radius: 0.5rem;
+}
+
+.research-warning {
+  border: 1px solid rgba(255, 209, 102, 0.22);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.research-warning strong {
+  color: var(--warning);
+}
+
+.research-warning ul {
+  margin-top: 0.45rem;
+}
+
+.research-pass {
+  color: var(--accent);
+  background: rgba(124, 255, 178, 0.08);
 }
 
 .candle-box {
