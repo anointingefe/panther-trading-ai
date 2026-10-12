@@ -89,3 +89,34 @@ def test_mt5_order_send_normalizes_symbol_volume_step() -> None:
     assert result.status == OrderStatus.ACCEPTED
     assert fake.sent_payloads[0]["volume"] == 1.0
     assert "volume adjusted 0.01->1" in result.message
+
+
+class RiskVolumeMT5(FillingModeMT5):
+    def symbol_info(self, symbol: str):
+        return SimpleNamespace(
+            volume_min=0.01,
+            volume_max=100.0,
+            volume_step=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            point=0.01,
+        )
+
+    def order_calc_profit(self, order_type, symbol, volume, entry, stop_loss):
+        return -200.0
+
+
+def test_mt5_calculates_position_volume_from_risk_amount() -> None:
+    broker = object.__new__(MT5Broker)
+    broker.mt5 = RiskVolumeMT5()
+
+    volume = broker.calculate_position_volume(
+        symbol="XAUUSD",
+        side=SignalSide.BUY,
+        entry=2400.0,
+        stop_loss=2398.0,
+        risk_amount=50.0,
+        max_volume=1.0,
+    )
+
+    assert volume == 0.25
