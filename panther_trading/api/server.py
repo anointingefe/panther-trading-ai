@@ -22,7 +22,7 @@ from panther_trading.data.markets import market_universe
 from panther_trading.journal import TradeJournal
 from panther_trading.learning import EvolutionEngine
 from panther_trading.live_guard import LiveTradingGate
-from panther_trading.live_auto import LiveAutoTrader
+from panther_trading.live_auto import LiveAutoRunner, LiveAutoTrader
 from panther_trading.demo_auto import DemoAutoRunner, DemoAutoTrader
 from panther_trading.exits import ExitManager
 from panther_trading.goals import GoalTracker
@@ -39,6 +39,14 @@ POSITIONS = PaperPositionBook(PROJECT_ROOT / "var/paper_positions.jsonl")
 GOALS = GoalTracker(PROJECT_ROOT / "var/trading_goals.json")
 DEMO_AUTO = DemoAutoRunner(
     DemoAutoTrader(PROJECT_ROOT / "config/demo.yaml", PROJECT_ROOT / "var/demo_auto_state.json"),
+    interval_seconds=load_config(PROJECT_ROOT / "config/demo.yaml").demo_auto.interval_seconds,
+)
+LIVE_AUTO = LiveAutoRunner(
+    LiveAutoTrader(
+        PROJECT_ROOT / "config/demo.yaml",
+        PROJECT_ROOT / "var/paper_positions.jsonl",
+        PROJECT_ROOT / "var/live_auto_state.json",
+    ),
     interval_seconds=load_config(PROJECT_ROOT / "config/demo.yaml").demo_auto.interval_seconds,
 )
 
@@ -64,7 +72,7 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"liveReadiness": self._live_readiness()})
             return
         if path == "/api/live-auto/status":
-            self._send_json({"liveAuto": LiveAutoTrader(PROJECT_ROOT / "config/demo.yaml", PROJECT_ROOT / "var/paper_positions.jsonl").status()})
+            self._send_json({"liveAuto": LIVE_AUTO.status()})
             return
         if path == "/api/validation/edge":
             self._send_json({"edgeValidation": self._edge_validation()})
@@ -255,6 +263,23 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/demo-auto/stop":
             self._send_json({"demoAuto": DEMO_AUTO.stop()})
+            return
+        if parsed.path == "/api/live-auto/cycle":
+            try:
+                payload = self._read_json_body()
+                self._send_json({"liveAuto": LIVE_AUTO.run_once(unlock_phrase=payload.get("unlockPhrase"))})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/live-auto/start":
+            try:
+                payload = self._read_json_body()
+                self._send_json({"liveAuto": LIVE_AUTO.start(unlock_phrase=payload.get("unlockPhrase"))})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/live-auto/stop":
+            self._send_json({"liveAuto": LIVE_AUTO.stop()})
             return
         if parsed.path == "/api/goals":
             try:
