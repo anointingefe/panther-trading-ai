@@ -40,6 +40,7 @@ a {
 
 #command-section,
 #signals-section,
+#targets-section,
 #backtests-section,
 #risk-section,
 #broker-section {
@@ -274,7 +275,8 @@ button:disabled {
 
 .hero-grid,
 .lower-grid,
-.metrics-grid {
+.metrics-grid,
+.target-grid {
   display: grid;
   gap: 1.5rem;
 }
@@ -293,9 +295,16 @@ button:disabled {
   margin-top: 1.5rem;
 }
 
+.target-grid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(20rem, 0.75fr);
+  margin-top: 1.5rem;
+}
+
 .signal-panel,
 .chart-panel,
 .metrics-grid article,
+.targets-panel,
+.performance-panel,
 .approval-panel,
 .broker-panel,
 .positions-panel,
@@ -321,6 +330,8 @@ button:disabled {
 
 .signal-panel,
 .chart-panel,
+.targets-panel,
+.performance-panel,
 .approval-panel,
 .broker-panel,
 .positions-panel,
@@ -477,6 +488,92 @@ button:disabled {
   display: block;
   margin-top: 0.35rem;
   color: var(--muted);
+}
+
+.goal-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 0.85rem;
+  align-items: end;
+  margin-top: 1.25rem;
+}
+
+.goal-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.goal-form input {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0 0.75rem;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.045);
+  font: inherit;
+}
+
+.target-list,
+.performance-grid {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.2rem;
+}
+
+.target-row,
+.performance-grid div {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.55rem;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.target-row > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.target-row span,
+.performance-grid span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.progress-track {
+  overflow: hidden;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.35s ease;
+}
+
+.progress-track span.complete {
+  background: var(--accent);
+  box-shadow: 0 0 20px rgba(124, 255, 178, 0.35);
+}
+
+.performance-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.performance-grid strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 1.25rem;
 }
 
 .risk-banner {
@@ -1300,6 +1397,7 @@ li + li {
   .hero-grid,
   .lower-grid,
   .metrics-grid,
+  .target-grid,
   .advisor-grid {
     grid-template-columns: 1fr;
   }
@@ -1316,6 +1414,7 @@ li + li {
 
   #command-section,
   #signals-section,
+  #targets-section,
   #backtests-section,
   #risk-section,
   #broker-section {
@@ -1328,6 +1427,10 @@ li + li {
 
   .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .goal-form {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1364,6 +1467,7 @@ li + li {
   .hero-grid,
   .lower-grid,
   .metrics-grid,
+  .target-grid,
   .price-grid {
     grid-template-columns: 1fr;
   }
@@ -1405,6 +1509,7 @@ li + li {
   .exit-grid,
   .learning-grid,
   .strategy-metrics,
+  .performance-grid,
   .candle-box {
     grid-template-columns: 1fr;
   }
