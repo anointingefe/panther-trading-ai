@@ -20,6 +20,7 @@
         <nav class="nav-list" aria-label="Dashboard sections">
           <a class="active" href="#command-section" aria-current="page">Command</a>
           <a href="#signals-section">Signals</a>
+          <a href="#targets-section">Targets</a>
           <a href="#backtests-section">Backtests</a>
           <a href="#risk-section">Risk Rules</a>
           <a href="#broker-section">Broker</a>
@@ -163,6 +164,74 @@
             <span>Win Rate</span>
             <strong id="win-rate">0%</strong>
             <small>Awaiting backtests</small>
+          </article>
+        </section>
+
+        <section class="target-grid" id="targets-section" aria-label="Trading goals and results" tabindex="-1">
+          <article class="targets-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Goals</p>
+                <h2>Profit Targets</h2>
+              </div>
+              <span class="pill" id="goals-status">Tracking</span>
+            </div>
+            <form class="goal-form" id="goals-form">
+              <label>
+                <span>Daily target</span>
+                <input id="goal-daily" name="dailyTarget" type="number" min="0" step="1" />
+              </label>
+              <label>
+                <span>Weekly target</span>
+                <input id="goal-weekly" name="weeklyTarget" type="number" min="0" step="1" />
+              </label>
+              <label>
+                <span>Monthly target</span>
+                <input id="goal-monthly" name="monthlyTarget" type="number" min="0" step="1" />
+              </label>
+              <button class="approve-button" type="submit">Save Targets</button>
+            </form>
+            <div class="target-list">
+              <div class="target-row">
+                <div>
+                  <strong>Today</strong>
+                  <span id="goal-daily-copy">$0 / $0</span>
+                </div>
+                <div class="progress-track"><span id="goal-daily-fill"></span></div>
+              </div>
+              <div class="target-row">
+                <div>
+                  <strong>This week</strong>
+                  <span id="goal-weekly-copy">$0 / $0</span>
+                </div>
+                <div class="progress-track"><span id="goal-weekly-fill"></span></div>
+              </div>
+              <div class="target-row">
+                <div>
+                  <strong>This month</strong>
+                  <span id="goal-monthly-copy">$0 / $0</span>
+                </div>
+                <div class="progress-track"><span id="goal-monthly-fill"></span></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="performance-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Results</p>
+                <h2>Trade Performance</h2>
+              </div>
+              <span class="pill" id="performance-status">Closed P/L</span>
+            </div>
+            <div class="performance-grid">
+              <div><span>Closed trades</span><strong id="perf-trades">0</strong></div>
+              <div><span>Net P/L</span><strong id="perf-net">$0</strong></div>
+              <div><span>Wins</span><strong id="perf-wins">0</strong></div>
+              <div><span>Losses</span><strong id="perf-losses">0</strong></div>
+              <div><span>Profit factor</span><strong id="perf-factor">0.00</strong></div>
+              <div><span>Avg win / loss</span><strong id="perf-average">$0 / $0</strong></div>
+            </div>
           </article>
         </section>
 
