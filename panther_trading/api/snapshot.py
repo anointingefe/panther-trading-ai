@@ -14,6 +14,7 @@ from panther_trading.advisor import (
     PortfolioRiskAnalyzer,
     PositionSizingManager,
 )
+from panther_trading.beast_mode import BeastModeStore, apply_beast_mode
 from panther_trading.brokers import create_broker
 from panther_trading.candles import CandleIntelligenceEngine
 from panther_trading.config import load_config
@@ -53,6 +54,10 @@ def build_dashboard_snapshot(
 ) -> dict[str, Any]:
     active_symbol = symbol.upper() if symbol else None
     config = load_config(config_path)
+    positions = PaperPositionBook(DEFAULT_POSITIONS)
+    position_history = positions.latest(limit=1000)
+    beast_mode = BeastModeStore().status(config, position_history)
+    config = apply_beast_mode(config, beast_mode["enabled"], position_history)
     simulator = create_broker("simulated")
     market_broker, market_source, market_error = _market_data_broker(simulator)
     active_symbol = active_symbol or config.app.symbol
@@ -79,8 +84,6 @@ def build_dashboard_snapshot(
     )
     order = ExecutionEngine(simulator, RiskManager(config.risk), config.execution).execute(signal)
     broker = broker_status()
-    positions = PaperPositionBook(DEFAULT_POSITIONS)
-    position_history = positions.latest(limit=1000)
     goals = GoalTracker(DEFAULT_GOALS).report(position_history)
     edge_validation = EdgeValidationGate(config.validation).evaluate(position_history)
     live_readiness = LiveTradingGate(config.execution).readiness(
@@ -140,6 +143,7 @@ def build_dashboard_snapshot(
             "reasons": list(live_readiness.reasons),
             "checklist": list(live_readiness.checklist),
         },
+        "beastMode": beast_mode,
         "symbol": active_symbol,
         "latestClose": candles[-1].close,
         "signal": _jsonable(signal),
