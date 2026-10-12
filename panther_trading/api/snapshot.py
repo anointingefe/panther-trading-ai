@@ -22,6 +22,7 @@ from panther_trading.data.markets import default_watchlist, market_universe
 from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.execution import ExecutionEngine
 from panther_trading.exits import ExitManager
+from panther_trading.goals import GoalTracker
 from panther_trading.journal import TradeJournal
 from panther_trading.knowledge import EliteTradingDoctrine
 from panther_trading.learning import EvolutionEngine
@@ -39,6 +40,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_JOURNAL = PROJECT_ROOT / "var/trade_journal.jsonl"
 DEFAULT_POSITIONS = PROJECT_ROOT / "var/paper_positions.jsonl"
 DEFAULT_DEMO_AUTO = PROJECT_ROOT / "var/demo_auto_state.json"
+DEFAULT_GOALS = PROJECT_ROOT / "var/trading_goals.json"
 BROKER_CONNECT_TIMEOUT_SECONDS = 4.0
 BROKER_READ_TIMEOUT_SECONDS = 6.0
 RESEARCH_TIMEOUT_SECONDS = 9.0
@@ -79,6 +81,7 @@ def build_dashboard_snapshot(
     broker = broker_status()
     positions = PaperPositionBook(DEFAULT_POSITIONS)
     position_history = positions.latest(limit=1000)
+    goals = GoalTracker(DEFAULT_GOALS).report(position_history)
     edge_validation = EdgeValidationGate(config.validation).evaluate(position_history)
     live_readiness = LiveTradingGate(config.execution).readiness(
         broker_status=broker,
@@ -152,6 +155,7 @@ def build_dashboard_snapshot(
         "sentiment": _jsonable(sentiment),
         "broker": broker,
         "positions": positions.open_positions(),
+        "goals": goals,
         "edgeValidation": edge_validation.to_dict(),
         "learning": learning.to_dict(),
         "exitReview": exit_review,
@@ -170,10 +174,10 @@ def build_dashboard_snapshot(
         "research": research,
         "markets": market_universe(),
         "metrics": {
-            "equity": 10000,
-            "dailyPnl": 0,
-            "winRate": 0,
-            "riskUsed": 0,
+            "equity": round(config.risk.account_equity + goals["performance"]["netPnl"], 2),
+            "dailyPnl": goals["progress"]["daily"]["netPnl"],
+            "winRate": goals["performance"]["winRate"],
+            "riskUsed": _open_risk_used(config, positions.open_positions()),
         },
         "watchlist": _build_watchlist(signal),
         "activity": [
@@ -190,6 +194,7 @@ def build_dashboard_snapshot(
             f"Market intelligence score: {market_intelligence['score']:+.2f}",
             f"Elite trader doctrine: {trader_doctrine.grade} at {trader_doctrine.score:.0%}",
             f"Exit manager reviewed {exit_review['reviewed']} open trade(s)",
+            f"Goal mode: {goals['goalMode'].replace('_', ' ')}",
             f"Opportunity scanner ranked {len(advisor_suite['opportunities'])} setup(s)",
             "Blended technical and sentiment score",
             f"Strategy gate: {strategy_gate.reason}",
@@ -200,6 +205,12 @@ def build_dashboard_snapshot(
         entry = journal.record_signal(snapshot)
         snapshot["journalEntry"] = entry.__dict__
     return snapshot
+
+
+def _open_risk_used(config: Any, open_positions: list[dict[str, Any]]) -> float:
+    max_risk = max(config.risk.max_open_positions, 1) * config.risk.max_risk_per_trade_pct
+    active_risk = len(open_positions) * config.risk.max_risk_per_trade_pct
+    return round(min(active_risk / max_risk, 1.0), 4)
 
 
 def build_market_structure_snapshot(
