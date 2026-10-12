@@ -10,6 +10,7 @@ from typing import Any
 
 from panther_trading.brokers import create_broker
 from panther_trading.brokers.base import Broker
+from panther_trading.beast_mode import BeastModeStore, DEFAULT_BEAST_MODE, apply_beast_mode
 from panther_trading.config import load_config
 from panther_trading.data import StaticSentimentCollector
 from panther_trading.demo_auto import DemoAutoTrader
@@ -89,17 +90,20 @@ class LiveAutoTrader:
         positions_path: str | Path,
         state_path: str | Path = DEFAULT_LIVE_AUTO,
         goals_path: str | Path = DEFAULT_GOALS,
+        beast_mode_path: str | Path = DEFAULT_BEAST_MODE,
         broker: Broker | None = None,
     ) -> None:
         self.config_path = Path(config_path)
         self.positions_path = Path(positions_path)
         self.state_path = Path(state_path)
         self.goals_path = Path(goals_path)
+        self.beast_mode_path = Path(beast_mode_path)
         self._broker = broker
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def status(self) -> dict[str, Any]:
         config = load_config(self.config_path)
+        config = apply_beast_mode(config, BeastModeStore(self.beast_mode_path).load().enabled, self._positions())
         edge = EdgeValidationGate(config.validation).evaluate(self._positions()).to_dict()
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=self._broker_status(),
@@ -137,6 +141,7 @@ class LiveAutoTrader:
         started_at = datetime.now(timezone.utc)
         config = load_config(self.config_path)
         positions = self._positions()
+        config = apply_beast_mode(config, BeastModeStore(self.beast_mode_path).load().enabled, positions)
         edge = EdgeValidationGate(config.validation).evaluate(positions).to_dict()
         try:
             broker = self._broker or create_broker("mt5")
@@ -165,6 +170,7 @@ class LiveAutoTrader:
             broker=broker,
             positions_path=self.positions_path,
             goals_path=self.goals_path,
+            beast_mode_path=self.beast_mode_path,
         )
         available = set(broker.list_symbols())
         symbols = helper._symbols_to_scan(config, available)
@@ -201,7 +207,9 @@ class LiveAutoTrader:
         unlock_phrase: str | None = None,
     ) -> dict[str, Any]:
         config = load_config(self.config_path)
-        edge = EdgeValidationGate(config.validation).evaluate(self._positions()).to_dict()
+        positions = self._positions()
+        config = apply_beast_mode(config, BeastModeStore(self.beast_mode_path).load().enabled, positions)
+        edge = EdgeValidationGate(config.validation).evaluate(positions).to_dict()
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=self._broker_status("mt5"),
             approval_status=str(journal_entry.get("approval_status")),
