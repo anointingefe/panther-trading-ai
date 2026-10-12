@@ -288,6 +288,57 @@ class MT5Broker(Broker):
             volume = min(volume, maximum)
         return volume
 
+    def calculate_position_volume(
+        self,
+        symbol: str,
+        side: SignalSide,
+        entry: float,
+        stop_loss: float,
+        risk_amount: float,
+        max_volume: float,
+    ) -> float:
+        if risk_amount <= 0 or max_volume <= 0:
+            return 0.0
+        risk_per_lot = self._risk_per_lot(symbol, side, entry, stop_loss)
+        if risk_per_lot <= 0:
+            return min(max_volume, self._normalized_volume(symbol, max_volume))
+        raw_volume = risk_amount / risk_per_lot
+        return self._floored_volume(symbol, min(raw_volume, max_volume))
+
+    def _risk_per_lot(self, symbol: str, side: SignalSide, entry: float, stop_loss: float) -> float:
+        order_type = self.mt5.ORDER_TYPE_BUY if side == SignalSide.BUY else self.mt5.ORDER_TYPE_SELL
+        calculated = self.mt5.order_calc_profit(order_type, symbol, 1.0, entry, stop_loss)
+        if calculated is not None:
+            return abs(float(calculated))
+        symbol_info = self.mt5.symbol_info(symbol)
+        if symbol_info is None:
+            return 0.0
+        tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or getattr(symbol_info, "point", 0.0) or 0.0)
+        tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
+        if tick_size <= 0 or tick_value <= 0:
+            return 0.0
+        return abs(entry - stop_loss) / tick_size * tick_value
+
+    def _floored_volume(self, symbol: str, requested: float) -> float:
+        symbol_info = self.mt5.symbol_info(symbol)
+        if symbol_info is None:
+            return max(requested, 0.0)
+        minimum = float(getattr(symbol_info, "volume_min", 0.0) or 0.0)
+        maximum = float(getattr(symbol_info, "volume_max", 0.0) or 0.0)
+        step = float(getattr(symbol_info, "volume_step", 0.0) or 0.0)
+        volume = max(requested, minimum) if minimum > 0 else requested
+        if maximum > 0:
+            volume = min(volume, maximum)
+        if step > 0:
+            if minimum > 0:
+                steps = math.floor(max(volume - minimum, 0.0) / step)
+                volume = minimum + steps * step
+            else:
+                volume = math.floor(volume / step) * step
+            precision = max(0, len(f"{step:.10f}".rstrip("0").split(".")[-1]))
+            volume = round(volume, precision)
+        return max(volume, 0.0)
+
     def _is_filling_mode_rejection(self, result: Any) -> bool:
         retcode = getattr(result, "retcode", None)
         invalid_fill = getattr(self.mt5, "TRADE_RETCODE_INVALID_FILL", None)
