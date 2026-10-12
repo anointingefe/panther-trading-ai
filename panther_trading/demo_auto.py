@@ -13,12 +13,14 @@ from panther_trading.brokers.base import Broker
 from panther_trading.config import PantherConfig, load_config
 from panther_trading.data import StaticSentimentCollector
 from panther_trading.data.markets import market_universe
+from panther_trading.goals import GoalTracker
 from panther_trading.models import OrderRequest, OrderStatus, TradeSignal
 from panther_trading.risk import RiskManager
 from panther_trading.strategies import SmaSentimentStrategy
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POSITIONS = PROJECT_ROOT / "var/paper_positions.jsonl"
+DEFAULT_GOALS = PROJECT_ROOT / "var/trading_goals.json"
 
 
 @dataclass(frozen=True)
@@ -65,10 +67,12 @@ class DemoAutoTrader:
         broker_kind: str = "mt5",
         broker: Broker | None = None,
         positions_path: str | Path = DEFAULT_POSITIONS,
+        goals_path: str | Path = DEFAULT_GOALS,
     ) -> None:
         self.config_path = Path(config_path)
         self.state_path = Path(state_path)
         self.positions_path = Path(positions_path)
+        self.goals_path = Path(goals_path)
         self.broker_kind = broker_kind
         self._broker = broker
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,6 +228,13 @@ class DemoAutoTrader:
         sentiment = StaticSentimentCollector().collect(symbol)
         signal = SmaSentimentStrategy(config.strategy).generate(symbol, candles, sentiment)
         positions = self._read_positions() if self.positions_path.exists() else []
+        goal_pressure = GoalTracker(self.goals_path).goal_pressure(positions)
+        if goal_pressure["daily_target_met"]:
+            return self._blocked(symbol, signal.side.value, signal.confidence, "Daily target reached; protecting gains until tomorrow")
+        if goal_pressure["weekly_target_met"] and signal.confidence < config.risk.min_confidence + 0.08:
+            return self._blocked(symbol, signal.side.value, signal.confidence, "Weekly target reached; only exceptional setups may add risk")
+        if goal_pressure["monthly_target_met"] and signal.confidence < config.risk.min_confidence + 0.1:
+            return self._blocked(symbol, signal.side.value, signal.confidence, "Monthly target reached; preserve capital unless setup is exceptional")
         temporal = self._temporal_gate(config, symbol, signal.generated_at, positions)
         if temporal:
             return self._blocked(symbol, signal.side.value, signal.confidence, temporal)
@@ -250,6 +261,7 @@ class DemoAutoTrader:
         volume = self._kelly_volume(config, signal)
         if scout_mode:
             volume = round(max(volume * config.demo_auto.scout_volume_multiplier, 0.001), 4)
+        volume = self._goal_adjusted_volume(config, signal, volume, goal_pressure, scout_mode)
 
         result = broker.place_order(
             OrderRequest(
@@ -263,15 +275,16 @@ class DemoAutoTrader:
             )
         )
         action = "placed" if result.status in {OrderStatus.ACCEPTED, OrderStatus.SIMULATED} else "blocked"
+        goal_mode = str(goal_pressure["mode"]).replace("_", " ")
         return DemoAutoDecision(
             symbol=symbol,
             action=action,
             side=signal.side.value,
             confidence=signal.confidence,
             reason=(
-                "Demo scout incubation order placed"
+                f"Demo scout incubation order placed; {goal_mode}"
                 if action == "placed" and scout_mode
-                else "Demo incubation order placed"
+                else f"Demo incubation order placed; {goal_mode}"
                 if action == "placed"
                 else result.message
             ),
@@ -412,6 +425,26 @@ class DemoAutoTrader:
         scale = min(kelly, cap) / cap
         minimum = config.demo_auto.demo_order_volume * 0.25
         volume = max(config.demo_auto.demo_order_volume * scale, minimum)
+        return round(min(volume, config.demo_auto.demo_order_volume), 4)
+
+    def _goal_adjusted_volume(
+        self,
+        config: PantherConfig,
+        signal: TradeSignal,
+        volume: float,
+        goal_pressure: dict[str, Any],
+        scout_mode: bool,
+    ) -> float:
+        if volume <= 0:
+            return 0.0
+        if goal_pressure["daily_progress"] < 0:
+            return round(max(volume * 0.5, 0.001), 4)
+        if scout_mode:
+            return round(min(volume, config.demo_auto.demo_order_volume * config.demo_auto.scout_volume_multiplier), 4)
+        if signal.confidence >= config.risk.min_confidence + 0.15 and goal_pressure["daily_progress"] < 0.8:
+            return round(min(volume * 1.15, config.demo_auto.demo_order_volume), 4)
+        if goal_pressure["weekly_progress"] >= 0.85 or goal_pressure["monthly_progress"] >= 0.85:
+            return round(max(volume * 0.65, 0.001), 4)
         return round(min(volume, config.demo_auto.demo_order_volume), 4)
 
     def _read_positions(self) -> list[dict[str, Any]]:
