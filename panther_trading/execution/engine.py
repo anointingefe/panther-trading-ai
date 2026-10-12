@@ -12,7 +12,7 @@ class ExecutionEngine:
         self.risk_manager = risk_manager
         self.config = config
 
-    def execute(self, signal: TradeSignal) -> OrderResult:
+    def execute(self, signal: TradeSignal, volume: float | None = None) -> OrderResult:
         open_positions = self.broker.count_open_positions(signal.symbol)
         decision = self.risk_manager.evaluate(signal, open_positions=open_positions)
         if not decision.allowed:
@@ -26,7 +26,7 @@ class ExecutionEngine:
         request = OrderRequest(
             symbol=signal.symbol,
             side=signal.side,
-            volume=self.config.default_volume,
+            volume=volume if volume is not None else self.config.default_volume,
             entry=signal.entry,
             stop_loss=signal.stop_loss,
             take_profit=signal.take_profit,
