@@ -255,6 +255,43 @@ def test_demo_auto_kelly_sizing_never_exceeds_configured_demo_volume(tmp_path) -
     assert 0 < volume <= config.demo_auto.demo_order_volume
 
 
+def test_demo_auto_goal_sizing_reduces_after_daily_loss(tmp_path) -> None:
+    trader = DemoAutoTrader(
+        "config/demo.yaml",
+        tmp_path / "demo_auto_state.json",
+        broker=SimulatedBroker(),
+    )
+    config = load_config("config/demo.yaml")
+    signal = TradeSignal(
+        symbol="EURUSD",
+        side=SignalSide.BUY,
+        confidence=0.8,
+        entry=1.1,
+        stop_loss=1.09,
+        take_profit=1.12,
+        rationale=("test",),
+        generated_at=datetime.now(timezone.utc),
+    )
+
+    volume = trader._goal_adjusted_volume(
+        config,
+        signal,
+        config.demo_auto.demo_order_volume,
+        {
+            "daily_progress": -0.2,
+            "weekly_progress": -0.01,
+            "monthly_progress": -0.01,
+            "daily_target_met": False,
+            "weekly_target_met": False,
+            "monthly_target_met": False,
+            "mode": "recovery_mode_cut_size",
+        },
+        scout_mode=False,
+    )
+
+    assert volume == round(config.demo_auto.demo_order_volume * 0.5, 4)
+
+
 def test_demo_auto_uses_separate_demo_position_limit(tmp_path) -> None:
     config = load_config("config/demo.yaml")
 
