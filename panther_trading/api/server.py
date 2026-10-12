@@ -25,6 +25,7 @@ from panther_trading.live_guard import LiveTradingGate
 from panther_trading.live_auto import LiveAutoTrader
 from panther_trading.demo_auto import DemoAutoRunner, DemoAutoTrader
 from panther_trading.exits import ExitManager
+from panther_trading.goals import GoalTracker
 from panther_trading.positions import PaperPositionBook
 from panther_trading.research import StrategyResearchLab
 from panther_trading.brokers import create_broker
@@ -35,6 +36,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEB_ROOT = PROJECT_ROOT / "web"
 JOURNAL = TradeJournal(PROJECT_ROOT / "var/trade_journal.jsonl")
 POSITIONS = PaperPositionBook(PROJECT_ROOT / "var/paper_positions.jsonl")
+GOALS = GoalTracker(PROJECT_ROOT / "var/trading_goals.json")
 DEMO_AUTO = DemoAutoRunner(
     DemoAutoTrader(PROJECT_ROOT / "config/demo.yaml", PROJECT_ROOT / "var/demo_auto_state.json"),
     interval_seconds=load_config(PROJECT_ROOT / "config/demo.yaml").demo_auto.interval_seconds,
@@ -90,6 +92,9 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/demo-auto/status":
             self._send_json({"demoAuto": DEMO_AUTO.status()})
+            return
+        if path == "/api/goals":
+            self._send_json({"goals": GOALS.report(POSITIONS.latest(limit=1000))})
             return
         if path == "/api/research/strategies":
             query = parse_qs(parsed.query)
@@ -250,6 +255,14 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/demo-auto/stop":
             self._send_json({"demoAuto": DEMO_AUTO.stop()})
+            return
+        if parsed.path == "/api/goals":
+            try:
+                payload = self._read_json_body()
+                GOALS.update(payload)
+                self._send_json({"goals": GOALS.report(POSITIONS.latest(limit=1000))})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
