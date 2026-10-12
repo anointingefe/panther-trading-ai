@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from panther_trading.models import BrokerStatus, Candle, OrderRequest, OrderResult, OrderStatus
+from panther_trading.models import BrokerStatus, Candle, OrderRequest, OrderResult, OrderStatus, SignalSide
 
 
 class Broker(ABC):
@@ -31,3 +31,19 @@ class Broker(ABC):
 
     def close_position(self, position_id: str, reason: str = "exit_manager") -> OrderResult:
         return OrderResult(OrderStatus.REJECTED, f"Broker cannot close position {position_id}: {reason}")
+
+    def calculate_position_volume(
+        self,
+        symbol: str,
+        side: SignalSide,
+        entry: float,
+        stop_loss: float,
+        risk_amount: float,
+        max_volume: float,
+    ) -> float:
+        if risk_amount <= 0 or max_volume <= 0:
+            return 0.0
+        distance = abs(entry - stop_loss)
+        if distance <= 0:
+            return 0.0
+        return round(min(max_volume, risk_amount / distance), 4)
