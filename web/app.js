@@ -180,6 +180,8 @@ const fallbackSnapshot = {
     built: true,
     armed: false,
     enabled: false,
+    running: false,
+    lastCycle: null,
     message: "Live runner is built but locked by safety gates.",
     reasons: ["Backend config has allow_live_trading=false."]
   },
@@ -574,8 +576,15 @@ function renderDemoLimits(limits) {
 
 function renderLiveAuto(state) {
   const status = state.armed ? "Built / Armed" : state.enabled ? "Built / Guarded" : "Built / Locked";
-  setText("live-auto-status", status.toUpperCase());
-  setText("live-auto-message", state.message || "Live execution path is present but disabled.");
+  const running = state.running ? " / RUNNING" : "";
+  const cycle = state.lastCycle;
+  setText("live-auto-status", `${status}${running}`.toUpperCase());
+  setText(
+    "live-auto-message",
+    cycle
+      ? `${state.message || "Live runner ready."} Last cycle: ${cycle.placed || 0} placed / ${cycle.scanned || 0} scanned.`
+      : state.message || "Live execution path is present but disabled."
+  );
 }
 
 function renderExitReview(report) {
@@ -924,6 +933,24 @@ async function demoAutoAction(action) {
   }
 }
 
+async function liveAutoAction(action) {
+  const endpoint = `/api/live-auto/${action}`;
+  setText("live-auto-message", action === "cycle" ? "Testing guarded live cycle..." : "Updating live loop...");
+  try {
+    const response = await fetchWithTimeout(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        unlockPhrase: document.getElementById("live-unlock-phrase").value
+      })
+    }, 25000);
+    const payload = await readJsonResponse(response, "Live auto action failed");
+    renderLiveAuto(payload.liveAuto || fallbackSnapshot.liveAuto);
+  } catch (error) {
+    setText("live-auto-message", error instanceof Error ? error.message : "Live auto action failed");
+  }
+}
+
 async function saveGoals(event) {
   event.preventDefault();
   const button = event.submitter || document.querySelector("#goals-form button");
@@ -972,6 +999,19 @@ async function refreshDemoAuto() {
     renderDemoAuto(payload.demoAuto || fallbackSnapshot.demoAuto);
   } catch {
     renderDemoAuto(fallbackSnapshot.demoAuto);
+  }
+}
+
+async function refreshLiveAuto() {
+  try {
+    const response = await fetchWithTimeout("/api/live-auto/status", { cache: "no-store" }, 8000);
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    renderLiveAuto(payload.liveAuto || fallbackSnapshot.liveAuto);
+  } catch {
+    renderLiveAuto(fallbackSnapshot.liveAuto);
   }
 }
 
@@ -1300,6 +1340,9 @@ document.getElementById("sync-mt5-history").addEventListener("click", syncMt5His
 document.getElementById("demo-auto-cycle").addEventListener("click", () => demoAutoAction("cycle"));
 document.getElementById("demo-auto-start").addEventListener("click", () => demoAutoAction("start"));
 document.getElementById("demo-auto-stop").addEventListener("click", () => demoAutoAction("stop"));
+document.getElementById("live-auto-cycle").addEventListener("click", () => liveAutoAction("cycle"));
+document.getElementById("live-auto-start").addEventListener("click", () => liveAutoAction("start"));
+document.getElementById("live-auto-stop").addEventListener("click", () => liveAutoAction("stop"));
 document.getElementById("goals-form").addEventListener("submit", saveGoals);
 document.getElementById("apply-exits").addEventListener("click", applyExitDecisions);
 document.getElementById("positions-list").addEventListener("click", (event) => {
@@ -1346,8 +1389,10 @@ renderDashboard(fallbackSnapshot);
 refreshSnapshot();
 refreshJournal();
 refreshDemoAuto();
+refreshLiveAuto();
 refreshGoals();
 refreshMarketStructure();
 setInterval(refreshMarketStructure, 5000);
 setInterval(refreshDemoAuto, 15000);
+setInterval(refreshLiveAuto, 15000);
 setInterval(() => refreshSnapshot(false, true), 30000);
