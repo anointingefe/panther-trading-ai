@@ -66,6 +66,10 @@ class PaperPositionBook:
         symbol_positions = [position for position in open_positions if position["symbol"] == symbol]
         if max_positions_per_symbol is not None and len(symbol_positions) >= max_positions_per_symbol:
             raise ValueError(f"Maximum open positions reached for {symbol}")
+        entry_metadata = entry.get("metadata") or {}
+        strategy_gate = entry_metadata.get("strategyGate") or {}
+        research_summary = entry_metadata.get("researchSummary") or {}
+        strategy_name = strategy_gate.get("selectedStrategy") or research_summary.get("bestStrategy") or "unclassified"
 
         position = PaperPosition(
             id=f"pos-{uuid4().hex[:12]}",
@@ -82,6 +86,8 @@ class PaperPositionBook:
                 "confidence": entry.get("confidence"),
                 "order_status": entry.get("order_status"),
                 "order_message": entry.get("order_message"),
+                "strategy": strategy_name,
+                "strategy_gate": strategy_gate,
             },
         )
         payload = position.__dict__
