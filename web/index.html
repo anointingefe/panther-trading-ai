@@ -313,6 +313,14 @@
               <strong id="live-auto-status">Built / Locked</strong>
               <small id="live-auto-message">Live execution path is present but disabled.</small>
             </div>
+            <div class="activation-grid" aria-label="Live activation checklist">
+              <div><span>Backend live</span><strong id="activation-backend">Locked</strong></div>
+              <div><span>MT5 broker</span><strong id="activation-broker">Waiting</strong></div>
+              <div><span>Edge proof</span><strong id="activation-edge">Waiting</strong></div>
+              <div><span>Approval policy</span><strong id="activation-approval">Required</strong></div>
+              <div><span>Unlock phrase</span><strong id="activation-unlock">Required</strong></div>
+              <div><span>Live state</span><strong id="activation-state">Blocked</strong></div>
+            </div>
             <div class="live-auto-controls" aria-label="Live auto controls">
               <label>
                 <span>Unlock phrase</span>
@@ -455,6 +463,7 @@
             <p class="learning-strategy">
               Best promotable strategy: <strong id="learning-strategy">Incubating</strong>
             </p>
+            <div class="strategy-memory" id="strategy-memory"></div>
             <div class="loss-review">
               <span>Latest loss review</span>
               <strong id="learning-loss">0.00R / 0 loss streak</strong>
