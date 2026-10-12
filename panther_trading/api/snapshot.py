@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import queue
 import threading
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,7 @@ from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.execution import ExecutionEngine
 from panther_trading.exits import ExitManager
 from panther_trading.journal import TradeJournal
+from panther_trading.knowledge import EliteTradingDoctrine
 from panther_trading.learning import EvolutionEngine
 from panther_trading.live_guard import LiveTradingGate
 from panther_trading.live_auto import LiveAutoTrader
@@ -64,6 +65,16 @@ def build_dashboard_snapshot(
     market_intelligence = MarketIntelligenceCollector().collect(active_symbol)
     sentiment = _sentiment_from_intelligence(active_symbol, market_intelligence)
     signal = SmaSentimentStrategy(config.strategy).generate(active_symbol, candles, sentiment)
+    trader_doctrine = EliteTradingDoctrine().evaluate(signal, candles)
+    signal = replace(
+        signal,
+        rationale=(
+            *signal.rationale,
+            f"Elite doctrine grade: {trader_doctrine.grade} at {trader_doctrine.score:.0%}.",
+            *trader_doctrine.notes[:3],
+            *[f"Doctrine blocker: {item}" for item in trader_doctrine.blockers[:2]],
+        ),
+    )
     order = ExecutionEngine(simulator, RiskManager(config.risk), config.execution).execute(signal)
     broker = broker_status()
     positions = PaperPositionBook(DEFAULT_POSITIONS)
@@ -145,6 +156,7 @@ def build_dashboard_snapshot(
         "learning": learning.to_dict(),
         "exitReview": exit_review,
         "marketIntelligence": market_intelligence,
+        "traderDoctrine": _jsonable(trader_doctrine),
         "advisorSuite": advisor_suite,
         "demoAuto": DemoAutoTrader(config_path, DEFAULT_DEMO_AUTO).latest_state(),
         "liveAuto": LiveAutoTrader(config_path, DEFAULT_POSITIONS).status(),
@@ -176,6 +188,7 @@ def build_dashboard_snapshot(
             f"Research source: {research_source.upper()}",
             f"Candle confirmation: {candle_intelligence.confirmation} at {candle_intelligence.confirmation_score:.0%}",
             f"Market intelligence score: {market_intelligence['score']:+.2f}",
+            f"Elite trader doctrine: {trader_doctrine.grade} at {trader_doctrine.score:.0%}",
             f"Exit manager reviewed {exit_review['reviewed']} open trade(s)",
             f"Opportunity scanner ranked {len(advisor_suite['opportunities'])} setup(s)",
             "Blended technical and sentiment score",
