@@ -10,6 +10,7 @@ from typing import Any
 
 from panther_trading.brokers import create_broker
 from panther_trading.brokers.base import Broker
+from panther_trading.beast_mode import BeastModeStore, DEFAULT_BEAST_MODE, apply_beast_mode
 from panther_trading.config import PantherConfig, load_config
 from panther_trading.data import StaticSentimentCollector
 from panther_trading.data.markets import market_universe
@@ -68,11 +69,13 @@ class DemoAutoTrader:
         broker: Broker | None = None,
         positions_path: str | Path = DEFAULT_POSITIONS,
         goals_path: str | Path = DEFAULT_GOALS,
+        beast_mode_path: str | Path = DEFAULT_BEAST_MODE,
     ) -> None:
         self.config_path = Path(config_path)
         self.state_path = Path(state_path)
         self.positions_path = Path(positions_path)
         self.goals_path = Path(goals_path)
+        self.beast_mode_path = Path(beast_mode_path)
         self.broker_kind = broker_kind
         self._broker = broker
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,6 +83,9 @@ class DemoAutoTrader:
     def run_cycle(self) -> DemoAutoCycle:
         started_at = datetime.now(timezone.utc)
         config = load_config(self.config_path)
+        positions = self._read_positions() if self.positions_path.exists() else []
+        beast_state = BeastModeStore(self.beast_mode_path).load()
+        config = apply_beast_mode(config, beast_state.enabled, positions)
         try:
             broker = self._broker or create_broker(self.broker_kind)
             status = broker.get_status()
@@ -130,7 +136,6 @@ class DemoAutoTrader:
         decisions: list[DemoAutoDecision] = []
         available = set(broker.list_symbols())
         symbols = self._symbols_to_scan(config, available)
-        positions = self._read_positions() if self.positions_path.exists() else []
         loss_state = self._loss_state(config, positions)
         placed_this_cycle = 0
         for symbol in symbols:
