@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass, is_dataclass, replace
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
@@ -146,10 +146,11 @@ class LiveAutoTrader:
             self._write_state(cycle)
             return cycle
 
+        requested_volume = min(config.demo_auto.demo_order_volume, config.execution.max_live_volume)
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=broker_status,
             approval_status=None,
-            requested_volume=min(config.demo_auto.demo_order_volume, config.execution.max_live_volume),
+            requested_volume=requested_volume,
             edge_validation_status=edge["status"],
             unlock_phrase=unlock_phrase,
         )
@@ -215,9 +216,6 @@ class LiveAutoTrader:
                 "reasons": list(readiness.reasons),
             }
 
-        from panther_trading.models import SignalSide, TradeSignal
-        from datetime import datetime, timezone
-
         signal = TradeSignal(
             symbol=str(journal_entry["symbol"]),
             side=SignalSide(str(journal_entry["side"])),
@@ -228,7 +226,19 @@ class LiveAutoTrader:
             rationale=tuple(journal_entry.get("rationale") or ()),
             generated_at=datetime.now(timezone.utc),
         )
-        result = ExecutionEngine(create_broker("mt5"), RiskManager(config.risk), config.execution).execute(signal)
+        broker = create_broker("mt5")
+        risk_amount = config.risk.account_equity * (config.risk.max_risk_per_trade_pct / 100)
+        volume = broker.calculate_position_volume(
+            signal.symbol,
+            signal.side,
+            signal.entry,
+            signal.stop_loss,
+            risk_amount,
+            config.execution.max_live_volume,
+        )
+        if volume <= 0:
+            return {"status": "blocked", "message": "Live execution refused: calculated volume is zero.", "brokerOrderId": None}
+        result = ExecutionEngine(broker, RiskManager(config.risk), config.execution).execute(signal, volume=volume)
         return {"status": result.status.value, "message": result.message, "brokerOrderId": result.broker_order_id}
 
     def _evaluate_symbol(
@@ -265,9 +275,7 @@ class LiveAutoTrader:
         if not risk.allowed:
             return self._blocked(symbol, signal.side.value, signal.confidence, risk.reason, edge_probability=edge_probability)
 
-        volume = helper._kelly_volume(config, signal)
-        volume = helper._goal_adjusted_volume(config, signal, volume, goal_pressure, scout_mode=False)
-        volume = round(min(volume, config.execution.max_live_volume), 4)
+        volume = self._live_volume(config, broker, signal, goal_pressure)
         if volume <= 0:
             return self._blocked(symbol, signal.side.value, signal.confidence, "Calculated live volume is zero", edge_probability=edge_probability)
 
@@ -294,6 +302,29 @@ class LiveAutoTrader:
             broker_order_id=result.broker_order_id,
             volume=volume,
             edge_probability=edge_probability,
+        )
+
+    def _live_volume(
+        self,
+        config: Any,
+        broker: Broker,
+        signal: TradeSignal,
+        goal_pressure: dict[str, Any],
+    ) -> float:
+        risk_amount = config.risk.account_equity * (config.risk.max_risk_per_trade_pct / 100)
+        if goal_pressure["daily_progress"] < 0:
+            risk_amount *= 0.5
+        elif goal_pressure["weekly_progress"] >= 0.85 or goal_pressure["monthly_progress"] >= 0.85:
+            risk_amount *= 0.65
+        elif signal.confidence >= config.risk.min_confidence + 0.15 and goal_pressure["daily_progress"] < 0.8:
+            risk_amount *= 1.15
+        return broker.calculate_position_volume(
+            signal.symbol,
+            signal.side,
+            signal.entry,
+            signal.stop_loss,
+            risk_amount,
+            config.execution.max_live_volume,
         )
 
     def _positions(self) -> list[dict[str, Any]]:
