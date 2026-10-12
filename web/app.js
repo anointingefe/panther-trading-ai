@@ -190,6 +190,22 @@ const fallbackSnapshot = {
     message: "Live runner is built but locked by safety gates.",
     reasons: ["Backend config has allow_live_trading=false."]
   },
+  beastMode: {
+    enabled: false,
+    active: false,
+    updatedAt: "",
+    disabledReason: null,
+    profile: {
+      minConfidence: 0.62,
+      riskPerTradePct: 1,
+      demoOrderVolume: 0.01,
+      demoOrdersPerCycle: 12,
+      maxOpenPositions: 12,
+      maxLiveVolume: 0.1,
+      hardRiskCapPct: 2
+    },
+    warning: "Beast mode increases risk and trade frequency. It still obeys stop-loss, daily-loss, broker, live unlock, and volume caps."
+  },
   demoLimits: {
     maxOpenPositions: 12,
     maxOrdersPerCycle: 12,
@@ -343,6 +359,7 @@ function renderDashboard(data) {
   renderExecutionMode(data.executionMode || fallbackSnapshot.executionMode);
   renderLiveReadiness(data.liveReadiness || fallbackSnapshot.liveReadiness);
   renderLiveAuto(data.liveAuto || fallbackSnapshot.liveAuto);
+  renderBeastMode(data.beastMode || fallbackSnapshot.beastMode);
   renderDemoLimits(data.demoLimits || fallbackSnapshot.demoLimits);
   renderDemoAuto(data.demoAuto || fallbackSnapshot.demoAuto);
   renderGoals(data.goals || fallbackSnapshot.goals);
@@ -598,6 +615,29 @@ function renderDemoLimits(limits) {
   setText("demo-limit-cycle", String(limits.maxOrdersPerCycle || 0));
   setText("demo-limit-open", String(limits.maxOpenPositions || 0));
   setText("demo-limit-scan", String(limits.maxSymbolsPerCycle || 0));
+}
+
+function renderBeastMode(beastMode) {
+  const profile = beastMode.profile || fallbackSnapshot.beastMode.profile;
+  const enabled = Boolean(beastMode.enabled);
+  const active = Boolean(beastMode.active);
+  const toggle = document.getElementById("beast-toggle");
+  setText("beast-status", active ? "ACTIVE" : enabled ? "PAUSED" : "OFF");
+  setText(
+    "beast-copy",
+    beastMode.disabledReason
+      ? beastMode.disabledReason
+      : active
+      ? beastMode.warning
+      : "Controlled aggressive mode is off. Panther is using standard risk."
+  );
+  setText("beast-confidence", pct.format(profile.minConfidence || 0));
+  setText("beast-risk", `${Number(profile.riskPerTradePct || 0).toFixed(1)}%`);
+  setText("beast-demo-volume", Number(profile.demoOrderVolume || 0).toFixed(4));
+  setText("beast-cycle-orders", String(profile.demoOrdersPerCycle || 0));
+  toggle.textContent = enabled ? "Turn Off" : "Turn On";
+  toggle.setAttribute("aria-pressed", String(enabled));
+  toggle.classList.toggle("active", enabled);
 }
 
 function renderLiveAuto(state) {
@@ -1026,6 +1066,28 @@ async function refreshGoals() {
   }
 }
 
+async function toggleBeastMode() {
+  const button = document.getElementById("beast-toggle");
+  const enable = button.getAttribute("aria-pressed") !== "true";
+  button.disabled = true;
+  button.textContent = enable ? "Turning On..." : "Turning Off...";
+  try {
+    const response = await fetchWithTimeout("/api/beast-mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: enable })
+    }, 10000);
+    const payload = await readJsonResponse(response, "Beast mode update failed");
+    renderBeastMode(payload.beastMode || fallbackSnapshot.beastMode);
+    await refreshSnapshot(false, false);
+  } catch (error) {
+    setText("beast-copy", error instanceof Error ? error.message : "Beast mode update failed");
+    renderBeastMode(fallbackSnapshot.beastMode);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function refreshDemoAuto() {
   try {
     const response = await fetchWithTimeout("/api/demo-auto/status", { cache: "no-store" }, 8000);
@@ -1381,6 +1443,7 @@ document.getElementById("live-auto-cycle").addEventListener("click", () => liveA
 document.getElementById("live-auto-start").addEventListener("click", () => liveAutoAction("start"));
 document.getElementById("live-auto-stop").addEventListener("click", () => liveAutoAction("stop"));
 document.getElementById("goals-form").addEventListener("submit", saveGoals);
+document.getElementById("beast-toggle").addEventListener("click", toggleBeastMode);
 document.getElementById("apply-exits").addEventListener("click", applyExitDecisions);
 document.getElementById("positions-list").addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
