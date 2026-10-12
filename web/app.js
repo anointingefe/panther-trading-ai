@@ -117,6 +117,11 @@ const fallbackSnapshot = {
       assessment: "No closed demo losses recorded yet.",
       actions: ["Keep collecting demo outcomes before changing strategy trust."]
     },
+    strategy_memory: {
+      leaders: [],
+      weak: [],
+      trackedStrategies: 0
+    },
     policy: "PANTHER may rank and recommend strategy changes, but it cannot auto-promote a strategy without enough closed demo trades and passing research evidence."
   },
   exitReview: {
@@ -526,6 +531,7 @@ function renderLearning(report) {
     `${lossSymbol}${Number(loss.latestR || 0).toFixed(2)}R / ${loss.consecutiveLosses || 0} loss streak`
   );
   setText("learning-loss-assessment", loss.assessment || fallbackSnapshot.learning.loss_review.assessment);
+  renderStrategyMemory(report.strategy_memory || fallbackSnapshot.learning.strategy_memory);
 
   const adaptations = report.adaptations || [];
   const blockers = report.blockers || [];
@@ -534,6 +540,26 @@ function renderLearning(report) {
     ...blockers.map((item) => `<li class="blocked">${item}</li>`),
     ...(loss.actions || []).map((item) => `<li>${item}</li>`)
   ].join("");
+}
+
+function renderStrategyMemory(memory) {
+  const box = document.getElementById("strategy-memory");
+  const leaders = memory.leaders || [];
+  if (!leaders.length) {
+    box.innerHTML = `<p class="empty-state">No closed strategy outcomes yet.</p>`;
+    return;
+  }
+  box.innerHTML = leaders
+    .slice(0, 3)
+    .map(
+      (item) => `
+        <div class="memory-row">
+          <strong>${item.strategy}</strong>
+          <span>${money.format(item.netPnl || 0)} / ${pct.format(item.winRate || 0)} win</span>
+        </div>
+      `
+    )
+    .join("");
 }
 
 function renderDemoAuto(state) {
@@ -803,6 +829,17 @@ function renderLiveReadiness(readiness) {
     reasons
       .map((reason) => `<li class="blocked">Blocked: ${reason}</li>`)
     .join("");
+  renderActivationMatrix(readiness, reasons);
+}
+
+function renderActivationMatrix(readiness, reasons) {
+  const includes = (text) => reasons.some((reason) => reason.toLowerCase().includes(text));
+  setText("activation-backend", readiness.enabled ? "ENABLED" : "LOCKED");
+  setText("activation-broker", includes("broker") || includes("metatrader") ? "BLOCKED" : "READY");
+  setText("activation-edge", includes("edge validation") ? "BLOCKED" : "PASSED");
+  setText("activation-approval", includes("manual approval") ? "REQUIRED" : "READY");
+  setText("activation-unlock", includes("unlock phrase") ? "REQUIRED" : "READY");
+  setText("activation-state", readiness.armed ? "ARMED" : "BLOCKED");
 }
 
 function renderApproval(entry) {
