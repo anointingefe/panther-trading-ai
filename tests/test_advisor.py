@@ -7,6 +7,7 @@ from panther_trading.config import (
     AppConfig,
     DemoAutoConfig,
     ExecutionConfig,
+    BeastModeConfig,
     PantherConfig,
     RiskConfig,
     StrategyConfig,
@@ -29,6 +30,7 @@ def _config() -> PantherConfig:
         execution=ExecutionConfig(allow_live_trading=False, default_volume=0.01),
         demo_auto=DemoAutoConfig(),
         validation=ValidationConfig(),
+        beast_mode=BeastModeConfig(),
     )
 
 
