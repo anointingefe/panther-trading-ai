@@ -73,6 +73,22 @@ def test_evolution_engine_reviews_latest_demo_loss() -> None:
     assert "Do not chase" in report.loss_review["actions"][0]
 
 
+def test_evolution_engine_tracks_strategy_memory() -> None:
+    report = EvolutionEngine(minimum_closed_trades=30).evaluate(
+        research={"scorecards": []},
+        positions=[
+            {"status": "closed", "pnl": 3.0, "metadata": {"strategy": "Breakout"}},
+            {"status": "closed", "pnl": -1.0, "metadata": {"strategy": "Breakout"}},
+            {"status": "closed", "pnl": -2.0, "metadata": {"strategy": "Reversal"}},
+        ],
+        journal_entries=[],
+    )
+
+    assert report.strategy_memory["trackedStrategies"] == 2
+    assert report.strategy_memory["leaders"][0]["strategy"] == "Breakout"
+    assert report.strategy_memory["weak"][0]["strategy"] == "Reversal"
+
+
 def test_snapshot_includes_learning_report() -> None:
     snapshot = build_dashboard_snapshot("config/demo.yaml", symbol="XAUUSD", record=False)
 
