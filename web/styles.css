@@ -812,6 +812,29 @@ button:disabled {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.live-auto-controls {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.live-auto-controls label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.live-auto-controls input {
+  min-height: 2.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0 0.75rem;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.045);
+  font: inherit;
+}
+
 .live-runner-card span,
 .live-runner-card small {
   color: var(--muted);
