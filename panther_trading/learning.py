@@ -15,6 +15,7 @@ class EvolutionReport:
     adaptations: tuple[str, ...]
     blockers: tuple[str, ...]
     loss_review: dict[str, Any]
+    strategy_memory: dict[str, Any]
     policy: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -51,7 +52,18 @@ class EvolutionEngine:
         score = self._score(best_card, closed_count, profit_factor, win_rate)
         blockers = self._blockers(best_card, closed_count, profit_factor)
         loss_review = self._loss_review(closed_positions, losing_positions)
+        strategy_memory = self._strategy_memory(closed_positions)
         adaptations = self._adaptations(best_card, journal_entries, closed_positions, loss_review)
+        if strategy_memory["leaders"]:
+            leader = strategy_memory["leaders"][0]
+            adaptations.append(
+                f"Best realized setup so far: {leader['strategy']} with {leader['netPnl']:.2f} net P/L from {leader['trades']} trade(s)."
+            )
+        if strategy_memory["weak"]:
+            weak = strategy_memory["weak"][0]
+            adaptations.append(
+                f"Watch weak setup: {weak['strategy']} is negative at {weak['netPnl']:.2f} net P/L."
+            )
         status = "ready_to_promote" if not blockers else "learning"
         phase = "demo_evidence" if closed_count else "observation"
 
@@ -65,6 +77,7 @@ class EvolutionEngine:
             adaptations=tuple(adaptations),
             blockers=tuple(blockers),
             loss_review=loss_review,
+            strategy_memory=strategy_memory,
             policy=(
                 "PANTHER may rank and recommend strategy changes, but it cannot auto-promote "
                 "a strategy without enough closed demo trades and passing research evidence."
@@ -173,6 +186,36 @@ class EvolutionEngine:
             "consecutiveLosses": consecutive_losses,
             "assessment": "Latest closed demo trade was a loss; the system is still in learning mode.",
             "actions": actions,
+        }
+
+    def _strategy_memory(self, closed_positions: list[dict[str, Any]]) -> dict[str, Any]:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for position in closed_positions:
+            metadata = position.get("metadata") or {}
+            strategy = str(metadata.get("strategy") or metadata.get("source") or "unclassified")
+            grouped.setdefault(strategy, []).append(position)
+        rows = []
+        for strategy, positions in grouped.items():
+            pnls = [float(position.get("pnl") or 0.0) for position in positions]
+            wins = len([pnl for pnl in pnls if pnl > 0])
+            losses = len([pnl for pnl in pnls if pnl < 0])
+            net_pnl = round(sum(pnls), 2)
+            rows.append(
+                {
+                    "strategy": strategy,
+                    "trades": len(positions),
+                    "wins": wins,
+                    "losses": losses,
+                    "winRate": round(wins / len(positions), 4) if positions else 0.0,
+                    "netPnl": net_pnl,
+                    "score": round(net_pnl + wins - losses, 4),
+                }
+            )
+        rows.sort(key=lambda row: row["score"], reverse=True)
+        return {
+            "leaders": rows[:3],
+            "weak": sorted([row for row in rows if row["netPnl"] < 0], key=lambda row: row["netPnl"])[:3],
+            "trackedStrategies": len(rows),
         }
 
     def _position_r(self, position: dict[str, Any]) -> float:
