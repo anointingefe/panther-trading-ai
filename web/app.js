@@ -190,6 +190,33 @@ const fallbackSnapshot = {
     maxSymbolsPerCycle: 96,
     coreRiskMaxOpenPositions: 3
   },
+  goals: {
+    targets: {
+      daily: 25,
+      weekly: 125,
+      monthly: 500,
+      currency: "USD",
+      updatedAt: ""
+    },
+    progress: {
+      daily: { closedTrades: 0, wins: 0, losses: 0, winRate: 0, netPnl: 0, target: 25, remaining: 25, percent: 0 },
+      weekly: { closedTrades: 0, wins: 0, losses: 0, winRate: 0, netPnl: 0, target: 125, remaining: 125, percent: 0 },
+      monthly: { closedTrades: 0, wins: 0, losses: 0, winRate: 0, netPnl: 0, target: 500, remaining: 500, percent: 0 }
+    },
+    performance: {
+      closedTrades: 0,
+      wins: 0,
+      losses: 0,
+      winRate: 0,
+      grossProfit: 0,
+      grossLoss: 0,
+      netPnl: 0,
+      profitFactor: 0,
+      averageWin: 0,
+      averageLoss: 0
+    },
+    goalMode: "target_tracking"
+  },
   journalEntry: null,
   sentiment: {
     score: 0.12,
@@ -311,6 +338,7 @@ function renderDashboard(data) {
   renderLiveAuto(data.liveAuto || fallbackSnapshot.liveAuto);
   renderDemoLimits(data.demoLimits || fallbackSnapshot.demoLimits);
   renderDemoAuto(data.demoAuto || fallbackSnapshot.demoAuto);
+  renderGoals(data.goals || fallbackSnapshot.goals);
   renderApproval(data.journalEntry || null);
   renderPositions(data.positions || []);
   renderEdgeValidation(data.edgeValidation || fallbackSnapshot.edgeValidation);
@@ -431,6 +459,42 @@ function renderMarketStructure(structure) {
   line.setAttribute("points", points);
   chart.classList.remove("chart-refreshing");
   window.requestAnimationFrame(() => chart.classList.add("chart-refreshing"));
+}
+
+function renderGoals(report) {
+  const targets = report.targets || fallbackSnapshot.goals.targets;
+  const progress = report.progress || fallbackSnapshot.goals.progress;
+  const performance = report.performance || fallbackSnapshot.goals.performance;
+  const mode = String(report.goalMode || "target_tracking").replaceAll("_", " ");
+  setText("goals-status", mode.toUpperCase());
+  setText("performance-status", `${pct.format(performance.winRate || 0)} WIN RATE`);
+
+  const dailyInput = document.getElementById("goal-daily");
+  const weeklyInput = document.getElementById("goal-weekly");
+  const monthlyInput = document.getElementById("goal-monthly");
+  if (document.activeElement !== dailyInput) dailyInput.value = Number(targets.daily || 0);
+  if (document.activeElement !== weeklyInput) weeklyInput.value = Number(targets.weekly || 0);
+  if (document.activeElement !== monthlyInput) monthlyInput.value = Number(targets.monthly || 0);
+
+  renderTargetProgress("daily", progress.daily || fallbackSnapshot.goals.progress.daily);
+  renderTargetProgress("weekly", progress.weekly || fallbackSnapshot.goals.progress.weekly);
+  renderTargetProgress("monthly", progress.monthly || fallbackSnapshot.goals.progress.monthly);
+
+  setText("perf-trades", String(performance.closedTrades || 0));
+  setText("perf-net", money.format(performance.netPnl || 0));
+  setText("perf-wins", String(performance.wins || 0));
+  setText("perf-losses", String(performance.losses || 0));
+  setText("perf-factor", Number(performance.profitFactor || 0).toFixed(2));
+  setText("perf-average", `${money.format(performance.averageWin || 0)} / ${money.format(performance.averageLoss || 0)}`);
+}
+
+function renderTargetProgress(period, item) {
+  const copy = document.getElementById(`goal-${period}-copy`);
+  const fill = document.getElementById(`goal-${period}-fill`);
+  const percent = Math.max(0, Math.min(Number(item.percent || 0), 1.5));
+  copy.textContent = `${money.format(item.netPnl || 0)} / ${money.format(item.target || 0)} (${pct.format(item.percent || 0)})`;
+  fill.style.width = `${Math.min(percent, 1) * 100}%`;
+  fill.classList.toggle("complete", percent >= 1);
 }
 
 function renderEdgeValidation(report) {
@@ -854,8 +918,47 @@ async function demoAutoAction(action) {
     const payload = await readJsonResponse(response, "Demo auto action failed");
     renderDemoAuto(payload.demoAuto || fallbackSnapshot.demoAuto);
     await refreshPositions();
+    await refreshGoals();
   } catch (error) {
     setText("demo-auto-message", error instanceof Error ? error.message : "Demo auto action failed");
+  }
+}
+
+async function saveGoals(event) {
+  event.preventDefault();
+  const button = event.submitter || document.querySelector("#goals-form button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  try {
+    const response = await fetchWithTimeout("/api/goals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dailyTarget: document.getElementById("goal-daily").value,
+        weeklyTarget: document.getElementById("goal-weekly").value,
+        monthlyTarget: document.getElementById("goal-monthly").value
+      })
+    }, 10000);
+    const payload = await readJsonResponse(response, "Saving targets failed");
+    renderGoals(payload.goals || fallbackSnapshot.goals);
+  } catch (error) {
+    setText("goals-status", error instanceof Error ? error.message : "SAVE FAILED");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Save Targets";
+  }
+}
+
+async function refreshGoals() {
+  try {
+    const response = await fetchWithTimeout("/api/goals", { cache: "no-store" }, 8000);
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    renderGoals(payload.goals || fallbackSnapshot.goals);
+  } catch {
+    renderGoals(fallbackSnapshot.goals);
   }
 }
 
@@ -968,6 +1071,7 @@ async function refreshPositions() {
     }
     const payload = await response.json();
     renderPositions(payload.positions || []);
+    await refreshGoals();
     await refreshExitReview();
   } catch {
     renderPositions([]);
@@ -1196,6 +1300,7 @@ document.getElementById("sync-mt5-history").addEventListener("click", syncMt5His
 document.getElementById("demo-auto-cycle").addEventListener("click", () => demoAutoAction("cycle"));
 document.getElementById("demo-auto-start").addEventListener("click", () => demoAutoAction("start"));
 document.getElementById("demo-auto-stop").addEventListener("click", () => demoAutoAction("stop"));
+document.getElementById("goals-form").addEventListener("submit", saveGoals);
 document.getElementById("apply-exits").addEventListener("click", applyExitDecisions);
 document.getElementById("positions-list").addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
@@ -1241,6 +1346,7 @@ renderDashboard(fallbackSnapshot);
 refreshSnapshot();
 refreshJournal();
 refreshDemoAuto();
+refreshGoals();
 refreshMarketStructure();
 setInterval(refreshMarketStructure, 5000);
 setInterval(refreshDemoAuto, 15000);
