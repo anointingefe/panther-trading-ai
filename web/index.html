@@ -313,6 +313,19 @@
               <strong id="live-auto-status">Built / Locked</strong>
               <small id="live-auto-message">Live execution path is present but disabled.</small>
             </div>
+            <div class="live-auto-controls" aria-label="Live auto controls">
+              <label>
+                <span>Unlock phrase</span>
+                <input id="live-unlock-phrase" type="password" autocomplete="off" placeholder="Required only after backend live is enabled" />
+              </label>
+              <div class="approval-actions">
+                <button class="ghost-button" id="live-auto-cycle" type="button">Test Live Cycle</button>
+                <button class="ghost-button" id="live-auto-start" type="button">Start Live Loop</button>
+              </div>
+              <button class="danger-button full-width-button" id="live-auto-stop" type="button">
+                Stop Live Loop
+              </button>
+            </div>
             <ul class="readiness-list" id="live-readiness-list"></ul>
           </article>
 
