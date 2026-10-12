@@ -17,6 +17,7 @@ from panther_trading.advisor import (
     PositionSizingManager,
 )
 from panther_trading.api.snapshot import broker_status, build_dashboard_snapshot, build_market_structure_snapshot
+from panther_trading.beast_mode import BeastModeStore
 from panther_trading.config import load_config
 from panther_trading.data.markets import market_universe
 from panther_trading.journal import TradeJournal
@@ -37,6 +38,7 @@ WEB_ROOT = PROJECT_ROOT / "web"
 JOURNAL = TradeJournal(PROJECT_ROOT / "var/trade_journal.jsonl")
 POSITIONS = PaperPositionBook(PROJECT_ROOT / "var/paper_positions.jsonl")
 GOALS = GoalTracker(PROJECT_ROOT / "var/trading_goals.json")
+BEAST_MODE = BeastModeStore(PROJECT_ROOT / "var/beast_mode.json")
 DEMO_AUTO = DemoAutoRunner(
     DemoAutoTrader(PROJECT_ROOT / "config/demo.yaml", PROJECT_ROOT / "var/demo_auto_state.json"),
     interval_seconds=load_config(PROJECT_ROOT / "config/demo.yaml").demo_auto.interval_seconds,
@@ -103,6 +105,9 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/goals":
             self._send_json({"goals": GOALS.report(POSITIONS.latest(limit=1000))})
+            return
+        if path == "/api/beast-mode":
+            self._send_json({"beastMode": BEAST_MODE.status(load_config(PROJECT_ROOT / "config/demo.yaml"), POSITIONS.latest(limit=1000))})
             return
         if path == "/api/research/strategies":
             query = parse_qs(parsed.query)
@@ -289,6 +294,16 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/beast-mode":
+            try:
+                payload = self._read_json_body()
+                if "enabled" not in payload:
+                    raise ValueError("Missing enabled flag")
+                BEAST_MODE.update(_bool_flag(payload["enabled"]))
+                self._send_json({"beastMode": BEAST_MODE.status(load_config(PROJECT_ROOT / "config/demo.yaml"), POSITIONS.latest(limit=1000))})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def log_message(self, format: str, *args: object) -> None:
@@ -460,6 +475,18 @@ def run(host: str = "127.0.0.1", port: int = 8080) -> None:
         print("\nStopping PANTHER dashboard")
     finally:
         server.server_close()
+
+
+def _bool_flag(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError("enabled must be a boolean")
 
 
 def main() -> None:
