@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -133,6 +134,17 @@ class DemoAutoTrader:
             self._write_state(cycle)
             return cycle
 
+        if status.equity is None or not math.isfinite(status.equity) or status.equity <= 0:
+            cycle = DemoAutoCycle(
+                status="blocked",
+                started_at=started_at.isoformat(),
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                broker_mode=mode, scanned=0, placed=0, blocked=1, decisions=(),
+                reasons=("Broker equity is unavailable or invalid.",),
+            )
+            self._write_state(cycle)
+            return cycle
+        config = replace(config, risk=replace(config.risk, account_equity=status.equity))
         decisions: list[DemoAutoDecision] = []
         available = set(broker.list_symbols())
         symbols = self._symbols_to_scan(config, available)
@@ -263,13 +275,20 @@ class DemoAutoTrader:
                     "Demo scout mode: sub-threshold setup is incubation-only and must stay out of live trading.",
                 ),
             )
-        risk = RiskManager(demo_risk).evaluate(signal, open_positions=total_open)
+        daily_pnl = GoalTracker(self.goals_path).report(positions)["progress"]["daily"]["netPnl"]
+        risk = RiskManager(demo_risk).evaluate(signal, open_positions=total_open, daily_pnl=daily_pnl)
         if not risk.allowed:
             return self._blocked(symbol, signal.side.value, signal.confidence, risk.reason)
         volume = self._kelly_volume(config, signal)
         if scout_mode:
             volume = round(max(volume * config.demo_auto.scout_volume_multiplier, 0.001), 4)
         volume = self._goal_adjusted_volume(config, signal, volume, goal_pressure, scout_mode)
+        risk_amount = config.risk.account_equity * config.risk.max_risk_per_trade_pct / 100
+        volume = broker.calculate_position_volume(
+            symbol, signal.side, signal.entry, signal.stop_loss, risk_amount, volume,
+        )
+        if not math.isfinite(volume) or volume <= 0:
+            return self._blocked(symbol, signal.side.value, signal.confidence, "No valid volume fits the trade risk budget")
 
         result = broker.place_order(
             OrderRequest(
@@ -326,7 +345,8 @@ class DemoAutoTrader:
             closed_at = self._parse_time(position.get("closed_at"))
             if closed_at and closed_at >= cutoff:
                 record["recent_loss"] = True
-                record["latest_closed_at"] = closed_at.isoformat()
+                if record["latest_closed_at"] is None:
+                    record["latest_closed_at"] = closed_at.isoformat()
             if not record.get("streak_closed"):
                 record["consecutive_losses"] = int(record["consecutive_losses"]) + 1
         return state
@@ -345,8 +365,6 @@ class DemoAutoTrader:
                 f"Post-loss cooldown active for {symbol}; waiting "
                 f"{config.demo_auto.loss_cooldown_hours}h after latest demo loss"
             )
-        if int(record.get("consecutive_losses") or 0) >= config.demo_auto.max_consecutive_symbol_losses:
-            return f"Symbol locked after {record['consecutive_losses']} consecutive demo loss(es)"
         return None
 
     def _volatility_guard(self, config: PantherConfig, candles: list[Any]) -> str | None:
@@ -378,7 +396,8 @@ class DemoAutoTrader:
             return None
         wins = len([position for position in samples if float(position.get("pnl") or 0.0) > 0])
         win_rate = wins / len(samples)
-        if win_rate < config.demo_auto.temporal_min_win_rate:
+        net_pnl = sum(float(position.get("pnl") or 0.0) for position in samples)
+        if net_pnl < 0 and win_rate < config.demo_auto.temporal_min_win_rate:
             return (
                 f"Temporal edge blocked {symbol} at UTC hour {hour}; "
                 f"{win_rate:.0%} win rate from {len(samples)} closed demos"
@@ -397,16 +416,11 @@ class DemoAutoTrader:
         ]
         if len(closed) < config.demo_auto.symbol_min_closed_trades:
             return None
-        wins = len([position for position in closed if float(position.get("pnl") or 0.0) > 0])
-        net_pnl = round(sum(float(position.get("pnl") or 0.0) for position in closed), 2)
-        win_rate = wins / len(closed)
-        edge_probability = self._bayesian_edge_probability(config, symbol, positions)
+        net_pnl = sum(float(position.get("pnl") or 0.0) for position in closed)
+        if not math.isfinite(net_pnl):
+            return f"Symbol performance data is invalid for {symbol}"
         if net_pnl < config.demo_auto.symbol_min_net_pnl:
             return f"Symbol performance gate blocked {symbol}; net P/L {net_pnl:.2f} is below required {config.demo_auto.symbol_min_net_pnl:.2f}"
-        if win_rate < config.demo_auto.symbol_min_win_rate:
-            return f"Symbol performance gate blocked {symbol}; {win_rate:.0%} win rate from {len(closed)} closed trades"
-        if edge_probability < config.demo_auto.symbol_min_edge_probability:
-            return f"Symbol edge gate blocked {symbol}; Bayesian edge {edge_probability:.0%} is below {config.demo_auto.symbol_min_edge_probability:.0%}"
         return None
 
     def _bayesian_edge_probability(
@@ -431,33 +445,17 @@ class DemoAutoTrader:
         signal: TradeSignal,
         edge_probability: float,
     ) -> TradeSignal:
-        weight = min(max(config.demo_auto.bayes_confidence_weight, 0.0), 1.0)
-        confidence = round((signal.confidence * (1 - weight)) + (edge_probability * weight), 4)
         return replace(
             signal,
-            confidence=confidence,
             rationale=(
                 *signal.rationale,
-                f"Bayesian demo edge probability adjusted confidence to {confidence:.0%}.",
+                f"Historical smoothed win frequency {edge_probability:.0%}; not a calibrated forecast or technical score.",
             ),
         )
 
     def _kelly_volume(self, config: PantherConfig, signal: TradeSignal) -> float:
-        risk = abs(signal.entry - signal.stop_loss)
-        reward = abs(signal.take_profit - signal.entry)
-        if risk <= 0 or reward <= 0:
-            return 0.0
-        b = reward / risk
-        p = min(max(signal.confidence, 0.0), 1.0)
-        q = 1 - p
-        kelly = max(((p * b) - q) / b, 0.0)
-        cap = config.demo_auto.max_kelly_fraction
-        if cap <= 0:
-            return config.demo_auto.demo_order_volume
-        scale = min(kelly, cap) / cap
-        minimum = config.demo_auto.demo_order_volume * 0.25
-        volume = max(config.demo_auto.demo_order_volume * scale, minimum)
-        return round(min(volume, config.demo_auto.demo_order_volume), 4)
+        """Compatibility name; heuristic signal scores are not valid Kelly odds."""
+        return config.demo_auto.demo_order_volume
 
     def _goal_adjusted_volume(
         self,

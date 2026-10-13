@@ -13,13 +13,13 @@ class SentimentCollector(ABC):
 
 
 class StaticSentimentCollector(SentimentCollector):
-    """Placeholder collector until paid APIs are wired in."""
+    """Neutral missing-data placeholder, never evidence of market sentiment."""
 
     def collect(self, symbol: str) -> SentimentSnapshot:
         return SentimentSnapshot(
             symbol=symbol,
-            score=0.12,
-            confidence=0.55,
-            sources=("static-dev-sentiment",),
+            score=0.0,
+            confidence=0.0,
+            sources=("sentiment-unavailable",),
             collected_at=datetime.now(timezone.utc),
         )

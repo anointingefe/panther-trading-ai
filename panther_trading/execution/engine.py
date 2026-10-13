@@ -13,7 +13,18 @@ class ExecutionEngine:
         self.config = config
 
     def execute(self, signal: TradeSignal, volume: float | None = None) -> OrderResult:
-        open_positions = self.broker.count_open_positions(signal.symbol)
+        status = self.broker.get_status()
+        if not status.connected:
+            return OrderResult(OrderStatus.REJECTED, "Broker is disconnected")
+        if status.mode not in {"paper", "demo", "contest", "real"}:
+            return OrderResult(OrderStatus.REJECTED, "Unknown broker account mode")
+        if status.mode == "real" and (
+            not self.config.allow_live_trading or status.mode not in self.config.allowed_live_account_modes
+        ):
+            return OrderResult(OrderStatus.REJECTED, "Real-account execution is disabled")
+        open_positions = self.broker.count_open_positions()
+        if self.broker.count_open_positions(signal.symbol) >= self.risk_manager.config.max_positions_per_symbol:
+            return OrderResult(OrderStatus.REJECTED, "Maximum positions for symbol reached")
         decision = self.risk_manager.evaluate(signal, open_positions=open_positions)
         if not decision.allowed:
             return OrderResult(OrderStatus.REJECTED, decision.reason)

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 import time
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
@@ -151,6 +152,12 @@ class LiveAutoTrader:
             self._write_state(cycle)
             return cycle
 
+        equity = broker_status.get("equity")
+        if equity is None or not math.isfinite(equity) or equity <= 0:
+            cycle = self._blocked_cycle(started_at, str(broker_status.get("mode") or "unknown"), "Broker equity is unavailable or invalid.")
+            self._write_state(cycle)
+            return cycle
+        config = replace(config, risk=replace(config.risk, account_equity=equity))
         requested_volume = min(config.demo_auto.demo_order_volume, config.execution.max_live_volume)
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=broker_status,
@@ -181,7 +188,10 @@ class LiveAutoTrader:
             if placed_this_cycle >= config.risk.max_open_positions:
                 decisions.append(self._blocked(symbol, "hold", 0.0, "Maximum live orders for this cycle reached"))
                 continue
-            decision = self._evaluate_symbol(config, broker, helper, symbol, goal_pressure, positions)
+            try:
+                decision = self._evaluate_symbol(config, broker, helper, symbol, goal_pressure, positions)
+            except Exception as exc:
+                decision = self._blocked(symbol, "hold", 0.0, f"Symbol skipped: {exc}")
             if decision.action == "placed":
                 placed_this_cycle += 1
             decisions.append(decision)
@@ -234,8 +244,12 @@ class LiveAutoTrader:
             rationale=tuple(journal_entry.get("rationale") or ()),
             generated_at=datetime.now(timezone.utc),
         )
-        broker = create_broker("mt5")
-        risk_amount = config.risk.account_equity * (config.risk.max_risk_per_trade_pct / 100)
+        broker = self._broker or create_broker("mt5")
+        equity = broker.get_status().equity
+        if equity is None or not math.isfinite(equity) or equity <= 0:
+            return {"status": "blocked", "message": "Broker equity is unavailable or invalid.", "brokerOrderId": None}
+        config = replace(config, risk=replace(config.risk, account_equity=equity))
+        risk_amount = equity * (config.risk.max_risk_per_trade_pct / 100)
         volume = broker.calculate_position_volume(
             signal.symbol,
             signal.side,
@@ -265,6 +279,9 @@ class LiveAutoTrader:
         if broker.count_open_positions(symbol) >= config.risk.max_positions_per_symbol:
             return self._blocked(symbol, "hold", 0.0, "Maximum live positions reached for symbol")
 
+        cooldown = helper._cooldown_reason(config, symbol, helper._loss_state(config, positions))
+        if cooldown:
+            return self._blocked(symbol, "hold", 0.0, cooldown)
         candles = broker.get_candles(symbol, config.app.timeframe, config.app.candles)
         volatility = helper._volatility_guard(config, candles)
         if volatility:
@@ -322,13 +339,14 @@ class LiveAutoTrader:
         signal: TradeSignal,
         goal_pressure: dict[str, Any],
     ) -> float:
-        risk_amount = config.risk.account_equity * (config.risk.max_risk_per_trade_pct / 100)
+        equity = broker.get_status().equity
+        if equity is None or not math.isfinite(equity) or equity <= 0:
+            return 0.0
+        risk_amount = equity * (config.risk.max_risk_per_trade_pct / 100)
         if goal_pressure["daily_progress"] < 0:
             risk_amount *= 0.5
         elif goal_pressure["weekly_progress"] >= 0.85 or goal_pressure["monthly_progress"] >= 0.85:
             risk_amount *= 0.65
-        elif signal.confidence >= config.risk.min_confidence + 0.15 and goal_pressure["daily_progress"] < 0.8:
-            risk_amount *= 1.15
         return broker.calculate_position_volume(
             signal.symbol,
             signal.side,
@@ -373,7 +391,7 @@ class LiveAutoTrader:
 
     def _broker_status(self, kind: str | None = None) -> dict[str, Any]:
         try:
-            broker = create_broker(kind)
+            broker = self._broker or create_broker(kind or "mt5")
             return self._broker_status_from_broker(broker)
         except Exception as exc:
             return {
