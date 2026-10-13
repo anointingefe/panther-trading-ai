@@ -69,7 +69,7 @@ class StockVolumeMT5(FillingModeMT5):
         return SimpleNamespace(retcode=self.TRADE_RETCODE_DONE, comment="done", order=9876)
 
 
-def test_mt5_order_send_normalizes_symbol_volume_step() -> None:
+def test_mt5_order_send_refuses_volume_below_symbol_minimum() -> None:
     broker = object.__new__(MT5Broker)
     fake = StockVolumeMT5()
     broker.mt5 = fake
@@ -86,9 +86,9 @@ def test_mt5_order_send_normalizes_symbol_volume_step() -> None:
         )
     )
 
-    assert result.status == OrderStatus.ACCEPTED
-    assert fake.sent_payloads[0]["volume"] == 1.0
-    assert "volume adjusted 0.01->1" in result.message
+    assert result.status == OrderStatus.REJECTED
+    assert fake.sent_payloads == []
+    assert "below broker minimum" in result.message
 
 
 class RiskVolumeMT5(FillingModeMT5):

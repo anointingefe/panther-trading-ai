@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_FLOOR
 from typing import Any
 
 from panther_trading.brokers.base import Broker
@@ -92,13 +93,13 @@ class MT5Broker(Broker):
     def count_open_positions(self, symbol: str | None = None) -> int:
         positions = self.mt5.positions_get(symbol=symbol) if symbol else self.mt5.positions_get()
         if positions is None:
-            return 0
+            raise RuntimeError(f"MT5 positions_get failed: {self.mt5.last_error()}")
         return len(positions)
 
     def open_positions(self) -> list[dict]:
         positions = self.mt5.positions_get()
         if positions is None:
-            return []
+            raise RuntimeError(f"MT5 positions_get failed: {self.mt5.last_error()}")
         results: list[dict] = []
         for position in positions:
             if int(getattr(position, "magic", 0) or 0) != PANTHER_MAGIC:
@@ -122,13 +123,26 @@ class MT5Broker(Broker):
         return results
 
     def place_order(self, request: OrderRequest) -> OrderResult:
+        if request.side not in {SignalSide.BUY, SignalSide.SELL}:
+            return OrderResult(OrderStatus.REJECTED, "Order side must be buy or sell")
+        values = (request.volume, request.entry, request.stop_loss, request.take_profit)
+        if any(not math.isfinite(value) or value <= 0 for value in values):
+            return OrderResult(OrderStatus.REJECTED, "Order values must be finite and positive")
+        if not self._valid_bracket(request.side, request.entry, request.stop_loss, request.take_profit):
+            return OrderResult(OrderStatus.REJECTED, "Invalid stop-loss/take-profit direction")
         tick = self.mt5.symbol_info_tick(request.symbol)
         if tick is None:
             return OrderResult(OrderStatus.REJECTED, f"No tick available for {request.symbol}")
 
         order_type = self.mt5.ORDER_TYPE_BUY if request.side == SignalSide.BUY else self.mt5.ORDER_TYPE_SELL
+        if not all(math.isfinite(value) and value > 0 for value in (tick.ask, tick.bid)) or tick.ask < tick.bid:
+            return OrderResult(OrderStatus.REJECTED, "Invalid market quote")
         price = tick.ask if request.side == SignalSide.BUY else tick.bid
+        if not self._valid_bracket(request.side, price, request.stop_loss, request.take_profit):
+            return OrderResult(OrderStatus.REJECTED, "Market price moved outside the planned stop/target")
         volume = self._normalized_volume(request.symbol, request.volume)
+        if volume <= 0:
+            return OrderResult(OrderStatus.REJECTED, "Requested volume is below broker minimum or symbol limits are unavailable")
         payload = {
             "action": self.mt5.TRADE_ACTION_DEAL,
             "symbol": request.symbol,
@@ -146,9 +160,11 @@ class MT5Broker(Broker):
         for filling_mode in self._order_filling_modes():
             result = self.mt5.order_send({**payload, "type_filling": filling_mode})
             if result is None:
-                rejected.append(f"order_send failed: {self.mt5.last_error()}")
-                continue
-            if result.retcode == self.mt5.TRADE_RETCODE_DONE:
+                return OrderResult(
+                    OrderStatus.REJECTED,
+                    f"MT5 submission outcome unknown; reconcile broker history before retrying: {self.mt5.last_error()}",
+                )
+            if result.retcode in self._accepted_retcodes():
                 message = str(result.comment)
                 if volume != request.volume:
                     message = f"{message} (volume adjusted {request.volume:g}->{volume:g})"
@@ -194,9 +210,11 @@ class MT5Broker(Broker):
         for filling_mode in self._order_filling_modes():
             result = self.mt5.order_send({**payload, "type_filling": filling_mode})
             if result is None:
-                rejected.append(f"order_send failed: {self.mt5.last_error()}")
-                continue
-            if result.retcode == self.mt5.TRADE_RETCODE_DONE:
+                return OrderResult(
+                    OrderStatus.REJECTED,
+                    f"MT5 close outcome unknown; reconcile the position before retrying: {self.mt5.last_error()}",
+                )
+            if result.retcode in self._accepted_retcodes():
                 return OrderResult(OrderStatus.ACCEPTED, str(result.comment), broker_order_id=str(result.order))
             message = str(getattr(result, "comment", "close rejected"))
             rejected.append(message)
@@ -217,7 +235,9 @@ class MT5Broker(Broker):
         deals = self.mt5.history_deals_get(since, now)
         if deals is None:
             raise RuntimeError(f"MT5 history_deals_get failed: {self.mt5.last_error()}")
-        orders = self.mt5.history_orders_get(since, now) or ()
+        orders = self.mt5.history_orders_get(since, now)
+        if orders is None:
+            raise RuntimeError(f"MT5 history_orders_get failed: {self.mt5.last_error()}")
         order_by_ticket = {str(getattr(order, "ticket", "")): order for order in orders}
 
         grouped: dict[str, list[Any]] = {}
@@ -253,11 +273,11 @@ class MT5Broker(Broker):
         demo = getattr(self.mt5, "ACCOUNT_TRADE_MODE_DEMO", None)
         contest = getattr(self.mt5, "ACCOUNT_TRADE_MODE_CONTEST", None)
         real = getattr(self.mt5, "ACCOUNT_TRADE_MODE_REAL", None)
-        if trade_mode == demo:
+        if demo is not None and trade_mode == demo:
             return "demo"
-        if trade_mode == contest:
+        if contest is not None and trade_mode == contest:
             return "contest"
-        if trade_mode == real:
+        if real is not None and trade_mode == real:
             return "real"
         return "unknown"
 
@@ -269,24 +289,21 @@ class MT5Broker(Broker):
         )
         return tuple(mode for mode in candidates if mode is not None)
 
+    @staticmethod
+    def _valid_bracket(side: SignalSide, entry: float, stop_loss: float, take_profit: float) -> bool:
+        if side == SignalSide.BUY:
+            return stop_loss < entry < take_profit
+        return take_profit < entry < stop_loss
+
+    def _accepted_retcodes(self) -> set[int]:
+        # Placed and partially filled requests must not be submitted again as failures.
+        return {
+            code for name in ("TRADE_RETCODE_DONE", "TRADE_RETCODE_DONE_PARTIAL", "TRADE_RETCODE_PLACED")
+            if (code := getattr(self.mt5, name, None)) is not None
+        }
+
     def _normalized_volume(self, symbol: str, requested: float) -> float:
-        symbol_info = self.mt5.symbol_info(symbol)
-        if symbol_info is None:
-            return requested
-
-        minimum = float(getattr(symbol_info, "volume_min", 0.0) or 0.0)
-        maximum = float(getattr(symbol_info, "volume_max", 0.0) or 0.0)
-        step = float(getattr(symbol_info, "volume_step", 0.0) or 0.0)
-        volume = max(requested, minimum) if minimum > 0 else requested
-
-        if step > 0:
-            steps = math.ceil((volume - minimum) / step) if minimum > 0 else math.ceil(volume / step)
-            volume = (minimum + steps * step) if minimum > 0 else steps * step
-            precision = max(0, len(f"{step:.10f}".rstrip("0").split(".")[-1]))
-            volume = round(volume, precision)
-        if maximum > 0:
-            volume = min(volume, maximum)
-        return volume
+        return self._floored_volume(symbol, requested)
 
     def calculate_position_volume(
         self,
@@ -297,64 +314,85 @@ class MT5Broker(Broker):
         risk_amount: float,
         max_volume: float,
     ) -> float:
-        if risk_amount <= 0 or max_volume <= 0:
+        if side not in {SignalSide.BUY, SignalSide.SELL}:
+            return 0.0
+        if any(not math.isfinite(value) or value <= 0 for value in (entry, stop_loss, risk_amount, max_volume)):
+            return 0.0
+        if (side == SignalSide.BUY and stop_loss >= entry) or (side == SignalSide.SELL and stop_loss <= entry):
             return 0.0
         risk_per_lot = self._risk_per_lot(symbol, side, entry, stop_loss)
-        if risk_per_lot <= 0:
-            return min(max_volume, self._normalized_volume(symbol, max_volume))
-        raw_volume = risk_amount / risk_per_lot
+        if not math.isfinite(risk_per_lot) or risk_per_lot <= 0:
+            return 0.0
+        raw_volume = float(Decimal(str(risk_amount)) / Decimal(str(risk_per_lot)))
         return self._floored_volume(symbol, min(raw_volume, max_volume))
 
     def _risk_per_lot(self, symbol: str, side: SignalSide, entry: float, stop_loss: float) -> float:
         order_type = self.mt5.ORDER_TYPE_BUY if side == SignalSide.BUY else self.mt5.ORDER_TYPE_SELL
         calculated = self.mt5.order_calc_profit(order_type, symbol, 1.0, entry, stop_loss)
-        if calculated is not None:
-            return abs(float(calculated))
-        symbol_info = self.mt5.symbol_info(symbol)
-        if symbol_info is None:
+        if calculated is None:
             return 0.0
-        tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or getattr(symbol_info, "point", 0.0) or 0.0)
-        tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
-        if tick_size <= 0 or tick_value <= 0:
-            return 0.0
-        return abs(entry - stop_loss) / tick_size * tick_value
+        value = float(calculated)
+        return -value if math.isfinite(value) and value < 0 else 0.0
 
     def _floored_volume(self, symbol: str, requested: float) -> float:
+        if not math.isfinite(requested) or requested <= 0:
+            return 0.0
         symbol_info = self.mt5.symbol_info(symbol)
         if symbol_info is None:
-            return max(requested, 0.0)
+            return 0.0
         minimum = float(getattr(symbol_info, "volume_min", 0.0) or 0.0)
         maximum = float(getattr(symbol_info, "volume_max", 0.0) or 0.0)
         step = float(getattr(symbol_info, "volume_step", 0.0) or 0.0)
-        volume = max(requested, minimum) if minimum > 0 else requested
-        if maximum > 0:
-            volume = min(volume, maximum)
-        if step > 0:
-            if minimum > 0:
-                steps = math.floor(max(volume - minimum, 0.0) / step)
-                volume = minimum + steps * step
-            else:
-                volume = math.floor(volume / step) * step
-            precision = max(0, len(f"{step:.10f}".rstrip("0").split(".")[-1]))
-            volume = round(volume, precision)
-        return max(volume, 0.0)
+        if any(not math.isfinite(value) or value <= 0 for value in (minimum, maximum, step)):
+            return 0.0
+        if maximum < minimum or requested < minimum:
+            return 0.0
+        lower, increment = Decimal(str(minimum)), Decimal(str(step))
+        limit = min(Decimal(str(requested)), Decimal(str(maximum)))
+        steps = ((limit - lower) / increment).to_integral_value(rounding=ROUND_FLOOR)
+        volume = float(lower + steps * increment)
+        return volume if 0 < volume <= min(requested, maximum) else 0.0
 
     def _is_filling_mode_rejection(self, result: Any) -> bool:
         retcode = getattr(result, "retcode", None)
         invalid_fill = getattr(self.mt5, "TRADE_RETCODE_INVALID_FILL", None)
-        comment = str(getattr(result, "comment", "")).lower()
-        return retcode == invalid_fill or "filling" in comment
+        return invalid_fill is not None and retcode == invalid_fill
 
     def _closed_trade_from_deals(
         self, position_id: str, deals: list[Any], order_by_ticket: dict[str, Any]
     ) -> ClosedTrade | None:
         entry_codes = {getattr(self.mt5, "DEAL_ENTRY_IN", 0)}
-        exit_codes = {getattr(self.mt5, "DEAL_ENTRY_OUT", 1), getattr(self.mt5, "DEAL_ENTRY_INOUT", 2)}
+        exit_codes = {getattr(self.mt5, "DEAL_ENTRY_OUT", 1), getattr(self.mt5, "DEAL_ENTRY_OUT_BY", 3)}
         sorted_deals = sorted(deals, key=lambda deal: getattr(deal, "time", 0))
         entry_deal = next((deal for deal in sorted_deals if getattr(deal, "entry", None) in entry_codes), None)
         exit_deal = next((deal for deal in reversed(sorted_deals) if getattr(deal, "entry", None) in exit_codes), None)
         if entry_deal is None or exit_deal is None:
             return None
+
+        # Partial exits are not completed trades. Reversals and scale-ins need
+        # separate accounting; do not fabricate a single entry/risk for them.
+        entries = [deal for deal in sorted_deals if getattr(deal, "entry", None) in entry_codes]
+        plain_exit_codes = {
+            getattr(self.mt5, "DEAL_ENTRY_OUT", 1),
+            getattr(self.mt5, "DEAL_ENTRY_OUT_BY", 3),
+        }
+        if len(entries) != 1 or any(
+            getattr(deal, "entry", None) not in entry_codes | plain_exit_codes
+            for deal in sorted_deals
+        ):
+            return None
+        exits = [deal for deal in sorted_deals if getattr(deal, "entry", None) in plain_exit_codes]
+        volumes = [float(getattr(deal, "volume", 0.0)) for deal in [entry_deal, *exits]]
+        prices = [float(getattr(deal, "price", 0.0)) for deal in [entry_deal, *exits]]
+        if not exits or any(not math.isfinite(value) or value <= 0 for value in volumes + prices):
+            return None
+        entry_volume, exit_volume = volumes[0], math.fsum(volumes[1:])
+        if not math.isclose(entry_volume, exit_volume, rel_tol=1e-9, abs_tol=1e-12):
+            return None
+        exit_deal = exits[-1]
+        close_price = math.fsum(
+            float(deal.price) * float(deal.volume) for deal in exits
+        ) / exit_volume
 
         entry_order = order_by_ticket.get(str(getattr(entry_deal, "order", "")))
         exit_order = order_by_ticket.get(str(getattr(exit_deal, "order", "")))
@@ -377,16 +415,18 @@ class MT5Broker(Broker):
             for deal in sorted_deals
             for field in ("profit", "swap", "commission", "fee")
         )
+        if not math.isfinite(pnl):
+            return None
         return ClosedTrade(
             external_id=position_id,
             source="mt5",
             symbol=str(getattr(entry_deal, "symbol")),
             side=side,
-            volume=float(min(float(getattr(entry_deal, "volume", 0.0)), float(getattr(exit_deal, "volume", 0.0)))),
+            volume=entry_volume,
             entry=entry_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            close_price=float(getattr(exit_deal, "price")),
+            close_price=close_price,
             pnl=round(pnl, 6),
             opened_at=datetime.fromtimestamp(int(getattr(entry_deal, "time")), tz=timezone.utc),
             closed_at=datetime.fromtimestamp(int(getattr(exit_deal, "time")), tz=timezone.utc),
@@ -407,6 +447,6 @@ class MT5Broker(Broker):
             if value is None:
                 continue
             number = float(value)
-            if number > 0:
+            if math.isfinite(number) and number > 0:
                 return number
         return None

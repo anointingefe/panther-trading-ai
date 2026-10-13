@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from dataclasses import replace
 
 from panther_trading.beast_mode import BeastModeStore, apply_beast_mode
 from panther_trading.api.server import _bool_flag
@@ -13,6 +14,12 @@ def test_beast_mode_off_preserves_existing_config() -> None:
 
 def test_beast_mode_profile_increases_aggression_inside_caps(tmp_path) -> None:
     config = load_config("config/demo.yaml")
+    config = replace(config, beast_mode=replace(
+        config.beast_mode,
+        demo_order_multiplier=1.5,
+        confidence_floor_delta=0.05,
+        extra_orders_per_cycle=2,
+    ))
     store = BeastModeStore(tmp_path / "beast_mode.json")
     state = store.update(True)
     effective = apply_beast_mode(config, state.enabled)

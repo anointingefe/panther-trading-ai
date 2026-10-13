@@ -1,6 +1,6 @@
 from dataclasses import replace
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from panther_trading.brokers.simulated import SimulatedBroker
 from panther_trading.config import load_config
@@ -203,7 +203,7 @@ def test_demo_auto_blocks_weak_temporal_window(tmp_path) -> None:
     assert "Temporal edge blocked" in reason
 
 
-def test_demo_auto_bayesian_update_reduces_confidence_after_losses(tmp_path) -> None:
+def test_demo_auto_history_is_not_mixed_into_technical_confidence(tmp_path) -> None:
     trader = DemoAutoTrader(
         "config/demo.yaml",
         tmp_path / "demo_auto_state.json",
@@ -229,7 +229,8 @@ def test_demo_auto_bayesian_update_reduces_confidence_after_losses(tmp_path) -> 
     adjusted = trader._adjust_signal_confidence(config, signal, edge)
 
     assert edge < 0.6
-    assert adjusted.confidence < signal.confidence
+    assert adjusted.confidence == signal.confidence
+    assert "not a calibrated" in adjusted.rationale[-1]
 
 
 def test_demo_auto_kelly_sizing_never_exceeds_configured_demo_volume(tmp_path) -> None:
@@ -358,3 +359,40 @@ def test_demo_auto_blocks_negative_symbol_performance(tmp_path) -> None:
 
     assert reason is not None
     assert "Symbol performance gate blocked" in reason
+
+
+def test_loss_cooldown_expires_even_after_a_losing_streak(tmp_path) -> None:
+    trader = DemoAutoTrader("config/demo.yaml", tmp_path / "state.json", broker=SimulatedBroker())
+    config = load_config("config/demo.yaml")
+    closed_at = datetime.now(timezone.utc) - timedelta(hours=config.demo_auto.loss_cooldown_hours + 1)
+    positions = [
+        {"status": "closed", "symbol": "EURUSD", "pnl": -1.0, "closed_at": closed_at.isoformat()}
+        for _ in range(3)
+    ]
+    state = trader._loss_state(config, positions)
+    assert state["EURUSD"]["consecutive_losses"] == 3
+    assert trader._cooldown_reason(config, "EURUSD", state) is None
+
+
+def test_profitable_low_win_rate_is_not_blocked_by_win_rate_alone(tmp_path) -> None:
+    trader = DemoAutoTrader("config/demo.yaml", tmp_path / "state.json", broker=SimulatedBroker())
+    config = load_config("config/demo.yaml")
+    now = datetime.now(timezone.utc)
+    positions = [
+        {"status": "closed", "symbol": "EURUSD", "pnl": pnl, "opened_at": now.isoformat()}
+        for pnl in [5.0, 5.0, 5.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+    ]
+    assert trader._symbol_performance_gate(config, "EURUSD", positions) is None
+    assert trader._temporal_gate(config, "EURUSD", now, positions) is None
+
+
+def test_loss_state_records_latest_loss_not_oldest_recent_loss(tmp_path) -> None:
+    trader = DemoAutoTrader("config/demo.yaml", tmp_path / "state.json", broker=SimulatedBroker())
+    config = load_config("config/demo.yaml")
+    now = datetime.now(timezone.utc)
+    positions = [
+        {"status": "closed", "symbol": "EURUSD", "pnl": -1, "closed_at": closed.isoformat()}
+        for closed in [now - timedelta(hours=2), now - timedelta(hours=1)]
+    ]
+    state = trader._loss_state(config, positions)
+    assert state["EURUSD"]["latest_closed_at"] == (now - timedelta(hours=1)).isoformat()

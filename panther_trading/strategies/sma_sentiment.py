@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import math
 from statistics import fmean
 
 from panther_trading.config import StrategyConfig
@@ -12,6 +13,18 @@ class SmaSentimentStrategy:
         self.config = config
 
     def generate(self, symbol: str, candles: list[Candle], sentiment: SentimentSnapshot) -> TradeSignal:
+        if not candles:
+            return TradeSignal.hold(symbol, 0.0, "No candles available")
+        for candle in candles:
+            prices = (candle.open, candle.high, candle.low, candle.close)
+            if any(not math.isfinite(value) or value <= 0 for value in prices):
+                return TradeSignal.hold(symbol, 0.0, "Invalid candle prices")
+            if not candle.low <= min(candle.open, candle.close) <= max(candle.open, candle.close) <= candle.high:
+                return TradeSignal.hold(symbol, candle.close, "Invalid candle OHLC structure")
+        if any(left.time >= right.time for left, right in zip(candles, candles[1:])):
+            return TradeSignal.hold(symbol, candles[-1].close, "Candle times must be strictly increasing")
+        if not 1 <= self.config.fast_sma < self.config.slow_sma:
+            return TradeSignal.hold(symbol, candles[-1].close, "Invalid strategy windows")
         if len(candles) < self.config.slow_sma:
             return TradeSignal.hold(symbol, candles[-1].close, "Not enough candles for strategy window")
 
@@ -20,7 +33,9 @@ class SmaSentimentStrategy:
         fast = fmean(closes[-self.config.fast_sma :])
         slow = fmean(closes[-self.config.slow_sma :])
         latest = closes[-1]
-        atr = self._average_range(candles[-14:])
+        atr = self._average_range(candles[-15:])
+        if atr <= 0:
+            return TradeSignal.hold(symbol, latest, "No measurable trading range")
         atr_pct = atr / max(abs(latest), 1e-9)
         ema_fast = self._ema(closes[-21:], 8)
         ema_slow = self._ema(closes[-55:], 21)
@@ -34,7 +49,13 @@ class SmaSentimentStrategy:
 
         trend_score = (fast - slow) / latest
         ema_score = (ema_fast - ema_slow) / latest
-        sentiment_score = sentiment.score * self.config.sentiment_weight / 100
+        sentiment_valid = (
+            sentiment.symbol.upper() == symbol.upper()
+            and math.isfinite(sentiment.score) and -1 <= sentiment.score <= 1
+            and math.isfinite(sentiment.confidence) and 0 <= sentiment.confidence <= 1
+        )
+        sentiment_confidence = sentiment.confidence if sentiment_valid else 0.0
+        sentiment_score = sentiment.score * sentiment_confidence * self.config.sentiment_weight / 100 if sentiment_valid else 0.0
         breakout_score = 0.0
         if latest > range_high + breakout_buffer:
             breakout_score = 0.003
@@ -84,7 +105,7 @@ class SmaSentimentStrategy:
         confirmation_bonus = min(confirmations * 0.04, 0.24)
         candle_bonus = candle_strength * 0.07 if candle_aligned else 0.0
         volatility_bonus = volatility_quality * 0.06
-        sentiment_bonus = sentiment.confidence * 0.025
+        sentiment_bonus = sentiment_confidence * 0.025
         conflict_penalty = min(conflicts * 0.07, 0.24)
         confidence = 0.14 + raw_edge + confirmation_bonus + candle_bonus + volatility_bonus + sentiment_bonus - conflict_penalty
         confidence = round(min(max(confidence, 0.0), 0.94), 4)
@@ -116,9 +137,12 @@ class SmaSentimentStrategy:
         )
 
     def _average_range(self, candles: list[Candle]) -> float:
-        if not candles:
-            return 0.001
-        return fmean(candle.high - candle.low for candle in candles)
+        if len(candles) < 2:
+            return candles[0].high - candles[0].low if candles else 0.0
+        return fmean(
+            max(current.high - current.low, abs(current.high - previous.close), abs(current.low - previous.close))
+            for previous, current in zip(candles, candles[1:])
+        )
 
     def _ema(self, values: list[float], period: int) -> float:
         if not values:
