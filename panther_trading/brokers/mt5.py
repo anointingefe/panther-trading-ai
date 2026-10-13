@@ -235,7 +235,9 @@ class MT5Broker(Broker):
         deals = self.mt5.history_deals_get(since, now)
         if deals is None:
             raise RuntimeError(f"MT5 history_deals_get failed: {self.mt5.last_error()}")
-        orders = self.mt5.history_orders_get(since, now) or ()
+        orders = self.mt5.history_orders_get(since, now)
+        if orders is None:
+            raise RuntimeError(f"MT5 history_orders_get failed: {self.mt5.last_error()}")
         order_by_ticket = {str(getattr(order, "ticket", "")): order for order in orders}
 
         grouped: dict[str, list[Any]] = {}
@@ -271,11 +273,11 @@ class MT5Broker(Broker):
         demo = getattr(self.mt5, "ACCOUNT_TRADE_MODE_DEMO", None)
         contest = getattr(self.mt5, "ACCOUNT_TRADE_MODE_CONTEST", None)
         real = getattr(self.mt5, "ACCOUNT_TRADE_MODE_REAL", None)
-        if trade_mode == demo:
+        if demo is not None and trade_mode == demo:
             return "demo"
-        if trade_mode == contest:
+        if contest is not None and trade_mode == contest:
             return "contest"
-        if trade_mode == real:
+        if real is not None and trade_mode == real:
             return "real"
         return "unknown"
 
@@ -360,12 +362,37 @@ class MT5Broker(Broker):
         self, position_id: str, deals: list[Any], order_by_ticket: dict[str, Any]
     ) -> ClosedTrade | None:
         entry_codes = {getattr(self.mt5, "DEAL_ENTRY_IN", 0)}
-        exit_codes = {getattr(self.mt5, "DEAL_ENTRY_OUT", 1), getattr(self.mt5, "DEAL_ENTRY_INOUT", 2)}
+        exit_codes = {getattr(self.mt5, "DEAL_ENTRY_OUT", 1), getattr(self.mt5, "DEAL_ENTRY_OUT_BY", 3)}
         sorted_deals = sorted(deals, key=lambda deal: getattr(deal, "time", 0))
         entry_deal = next((deal for deal in sorted_deals if getattr(deal, "entry", None) in entry_codes), None)
         exit_deal = next((deal for deal in reversed(sorted_deals) if getattr(deal, "entry", None) in exit_codes), None)
         if entry_deal is None or exit_deal is None:
             return None
+
+        # Partial exits are not completed trades. Reversals and scale-ins need
+        # separate accounting; do not fabricate a single entry/risk for them.
+        entries = [deal for deal in sorted_deals if getattr(deal, "entry", None) in entry_codes]
+        plain_exit_codes = {
+            getattr(self.mt5, "DEAL_ENTRY_OUT", 1),
+            getattr(self.mt5, "DEAL_ENTRY_OUT_BY", 3),
+        }
+        if len(entries) != 1 or any(
+            getattr(deal, "entry", None) not in entry_codes | plain_exit_codes
+            for deal in sorted_deals
+        ):
+            return None
+        exits = [deal for deal in sorted_deals if getattr(deal, "entry", None) in plain_exit_codes]
+        volumes = [float(getattr(deal, "volume", 0.0)) for deal in [entry_deal, *exits]]
+        prices = [float(getattr(deal, "price", 0.0)) for deal in [entry_deal, *exits]]
+        if not exits or any(not math.isfinite(value) or value <= 0 for value in volumes + prices):
+            return None
+        entry_volume, exit_volume = volumes[0], math.fsum(volumes[1:])
+        if not math.isclose(entry_volume, exit_volume, rel_tol=1e-9, abs_tol=1e-12):
+            return None
+        exit_deal = exits[-1]
+        close_price = math.fsum(
+            float(deal.price) * float(deal.volume) for deal in exits
+        ) / exit_volume
 
         entry_order = order_by_ticket.get(str(getattr(entry_deal, "order", "")))
         exit_order = order_by_ticket.get(str(getattr(exit_deal, "order", "")))
@@ -388,16 +415,18 @@ class MT5Broker(Broker):
             for deal in sorted_deals
             for field in ("profit", "swap", "commission", "fee")
         )
+        if not math.isfinite(pnl):
+            return None
         return ClosedTrade(
             external_id=position_id,
             source="mt5",
             symbol=str(getattr(entry_deal, "symbol")),
             side=side,
-            volume=float(min(float(getattr(entry_deal, "volume", 0.0)), float(getattr(exit_deal, "volume", 0.0)))),
+            volume=entry_volume,
             entry=entry_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            close_price=float(getattr(exit_deal, "price")),
+            close_price=close_price,
             pnl=round(pnl, 6),
             opened_at=datetime.fromtimestamp(int(getattr(entry_deal, "time")), tz=timezone.utc),
             closed_at=datetime.fromtimestamp(int(getattr(exit_deal, "time")), tz=timezone.utc),
@@ -418,6 +447,6 @@ class MT5Broker(Broker):
             if value is None:
                 continue
             number = float(value)
-            if number > 0:
+            if math.isfinite(number) and number > 0:
                 return number
         return None
