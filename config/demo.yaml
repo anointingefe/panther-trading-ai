@@ -67,13 +67,13 @@ validation:
 
 beast_mode:
   enabled: false
-  demo_order_multiplier: 2.0
-  live_risk_multiplier: 1.5
-  live_volume_multiplier: 1.5
-  confidence_floor_delta: 0.04
-  scout_floor_delta: 0.03
-  extra_orders_per_cycle: 4
-  extra_open_positions: 3
-  max_risk_per_trade_pct_cap: 2.0
-  max_live_volume_cap: 0.25
+  demo_order_multiplier: 1.0
+  live_risk_multiplier: 1.0
+  live_volume_multiplier: 1.0
+  confidence_floor_delta: 0.0
+  scout_floor_delta: 0.0
+  extra_orders_per_cycle: 0
+  extra_open_positions: 0
+  max_risk_per_trade_pct_cap: 1.0
+  max_live_volume_cap: 0.02
   disable_after_daily_loss: true
