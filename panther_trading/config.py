@@ -85,15 +85,15 @@ class ValidationConfig:
 @dataclass(frozen=True)
 class BeastModeConfig:
     enabled: bool = False
-    demo_order_multiplier: float = 2.0
-    live_risk_multiplier: float = 1.5
-    live_volume_multiplier: float = 1.5
-    confidence_floor_delta: float = 0.04
-    scout_floor_delta: float = 0.03
-    extra_orders_per_cycle: int = 4
-    extra_open_positions: int = 3
-    max_risk_per_trade_pct_cap: float = 2.0
-    max_live_volume_cap: float = 0.25
+    demo_order_multiplier: float = 1.0
+    live_risk_multiplier: float = 1.0
+    live_volume_multiplier: float = 1.0
+    confidence_floor_delta: float = 0.0
+    scout_floor_delta: float = 0.0
+    extra_orders_per_cycle: int = 0
+    extra_open_positions: int = 0
+    max_risk_per_trade_pct_cap: float = 1.0
+    max_live_volume_cap: float = 0.02
     disable_after_daily_loss: bool = True
 
 
