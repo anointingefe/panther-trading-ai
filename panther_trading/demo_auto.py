@@ -79,9 +79,23 @@ class DemoAutoTrader:
         self.beast_mode_path = Path(beast_mode_path)
         self.broker_kind = broker_kind
         self._broker = broker
+        self._cycle_lock = Lock()
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def run_cycle(self) -> DemoAutoCycle:
+        if not self._cycle_lock.acquire(blocking=False):
+            now = datetime.now(timezone.utc).isoformat()
+            return DemoAutoCycle(
+                status="blocked", started_at=now, finished_at=now,
+                broker_mode="unknown", scanned=0, placed=0, blocked=1,
+                decisions=(), reasons=("A demo scan is already in progress.",),
+            )
+        try:
+            return self._run_cycle()
+        finally:
+            self._cycle_lock.release()
+
+    def _run_cycle(self) -> DemoAutoCycle:
         started_at = datetime.now(timezone.utc)
         config = load_config(self.config_path)
         positions = self._read_positions() if self.positions_path.exists() else []
@@ -548,12 +562,12 @@ class DemoAutoRunner:
             if cycle.status == "blocked" and cycle.reasons
             else "Manual demo cycle completed."
         )
-        return {"running": False, "lastCycle": cycle.to_dict(), "message": message}
+        return {"running": bool(self._thread and self._thread.is_alive() and not self._stop.is_set()), "lastCycle": cycle.to_dict(), "message": message}
 
     def _loop(self) -> None:
         while not self._stop.is_set():
             self.trader.run_cycle()
-            time.sleep(self.interval_seconds)
+            self._stop.wait(self.interval_seconds)
 
 
 def _jsonable(value: Any) -> Any:

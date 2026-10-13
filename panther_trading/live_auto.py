@@ -100,6 +100,7 @@ class LiveAutoTrader:
         self.goals_path = Path(goals_path)
         self.beast_mode_path = Path(beast_mode_path)
         self._broker = broker
+        self._cycle_lock = Lock()
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def status(self) -> dict[str, Any]:
@@ -139,6 +140,17 @@ class LiveAutoTrader:
         return json.loads(self.state_path.read_text(encoding="utf-8"))
 
     def run_cycle(self, unlock_phrase: str | None = None) -> LiveAutoCycle:
+        if not self._cycle_lock.acquire(blocking=False):
+            return self._blocked_cycle(
+                datetime.now(timezone.utc), "unknown",
+                "A live scan is already in progress.",
+            )
+        try:
+            return self._run_cycle(unlock_phrase=unlock_phrase)
+        finally:
+            self._cycle_lock.release()
+
+    def _run_cycle(self, unlock_phrase: str | None = None) -> LiveAutoCycle:
         started_at = datetime.now(timezone.utc)
         config = load_config(self.config_path)
         positions = self._positions()
@@ -463,12 +475,12 @@ class LiveAutoRunner:
             if cycle.status == "blocked" and cycle.reasons
             else "Manual live cycle completed."
         )
-        return {"running": False, "lastCycle": cycle.to_dict(), "message": message}
+        return {"running": bool(self._thread and self._thread.is_alive() and not self._stop.is_set()), "lastCycle": cycle.to_dict(), "message": message}
 
     def _loop(self) -> None:
         while not self._stop.is_set():
             self.trader.run_cycle(unlock_phrase=self._unlock_phrase)
-            time.sleep(self.interval_seconds)
+            self._stop.wait(self.interval_seconds)
 
 
 def _jsonable(value: Any) -> Any:
