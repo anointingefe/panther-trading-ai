@@ -243,6 +243,9 @@ class DemoAutoTrader:
         temporal = self._temporal_gate(config, symbol, signal.generated_at, positions)
         if temporal:
             return self._blocked(symbol, signal.side.value, signal.confidence, temporal)
+        performance = self._symbol_performance_gate(config, symbol, positions)
+        if performance:
+            return self._blocked(symbol, signal.side.value, signal.confidence, performance)
         edge_probability = self._bayesian_edge_probability(config, symbol, positions)
         signal = self._adjust_signal_confidence(config, signal, edge_probability)
         demo_risk = replace(
@@ -380,6 +383,30 @@ class DemoAutoTrader:
                 f"Temporal edge blocked {symbol} at UTC hour {hour}; "
                 f"{win_rate:.0%} win rate from {len(samples)} closed demos"
             )
+        return None
+
+    def _symbol_performance_gate(
+        self,
+        config: PantherConfig,
+        symbol: str,
+        positions: list[dict[str, Any]],
+    ) -> str | None:
+        closed = [
+            position for position in positions
+            if self._same_symbol(position, symbol) and position.get("status") == "closed"
+        ]
+        if len(closed) < config.demo_auto.symbol_min_closed_trades:
+            return None
+        wins = len([position for position in closed if float(position.get("pnl") or 0.0) > 0])
+        net_pnl = round(sum(float(position.get("pnl") or 0.0) for position in closed), 2)
+        win_rate = wins / len(closed)
+        edge_probability = self._bayesian_edge_probability(config, symbol, positions)
+        if net_pnl < config.demo_auto.symbol_min_net_pnl:
+            return f"Symbol performance gate blocked {symbol}; net P/L {net_pnl:.2f} is below required {config.demo_auto.symbol_min_net_pnl:.2f}"
+        if win_rate < config.demo_auto.symbol_min_win_rate:
+            return f"Symbol performance gate blocked {symbol}; {win_rate:.0%} win rate from {len(closed)} closed trades"
+        if edge_probability < config.demo_auto.symbol_min_edge_probability:
+            return f"Symbol edge gate blocked {symbol}; Bayesian edge {edge_probability:.0%} is below {config.demo_auto.symbol_min_edge_probability:.0%}"
         return None
 
     def _bayesian_edge_probability(
