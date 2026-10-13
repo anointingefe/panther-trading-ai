@@ -295,10 +295,10 @@ def test_demo_auto_goal_sizing_reduces_after_daily_loss(tmp_path) -> None:
 def test_demo_auto_uses_separate_demo_position_limit(tmp_path) -> None:
     config = load_config("config/demo.yaml")
 
-    assert config.risk.max_open_positions == 3
-    assert config.demo_auto.max_open_positions == 12
-    assert config.demo_auto.max_orders_per_cycle == 12
-    assert config.demo_auto.scout_min_confidence == 0.48
+    assert config.risk.max_open_positions == 2
+    assert config.demo_auto.max_open_positions == 6
+    assert config.demo_auto.max_orders_per_cycle == 6
+    assert config.demo_auto.scout_min_confidence == 0.70
 
 
 class AlwaysStrongBroker(SimulatedBroker):
@@ -340,3 +340,21 @@ def test_demo_auto_never_exceeds_cycle_order_cap(tmp_path) -> None:
 
     assert cycle.placed == load_config("config/demo.yaml").demo_auto.max_orders_per_cycle
     assert any("Maximum demo orders" in decision.reason for decision in cycle.decisions)
+
+
+def test_demo_auto_blocks_negative_symbol_performance(tmp_path) -> None:
+    trader = DemoAutoTrader(
+        "config/demo.yaml",
+        tmp_path / "demo_auto_state.json",
+        broker=SimulatedBroker(),
+    )
+    config = load_config("config/demo.yaml")
+    positions = [
+        {"status": "closed", "symbol": "EURUSD", "pnl": -1.0}
+        for _ in range(config.demo_auto.symbol_min_closed_trades)
+    ]
+
+    reason = trader._symbol_performance_gate(config, "EURUSD", positions)
+
+    assert reason is not None
+    assert "Symbol performance gate blocked" in reason
