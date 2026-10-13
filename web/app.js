@@ -1375,6 +1375,10 @@ function renderMarketUniverse(markets) {
 }
 
 function setupSidebarNavigation() {
+  if (window.setupPantherWorkspace) {
+    window.setupPantherWorkspace();
+    return;
+  }
   const links = Array.from(document.querySelectorAll(".nav-list a[href^='#'], .brand[href^='#']"));
   const navLinks = Array.from(document.querySelectorAll(".nav-list a[href^='#']"));
   const targets = navLinks
