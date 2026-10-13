@@ -62,6 +62,10 @@ class DemoAutoConfig:
     bayes_prior_wins: float = 3.0
     bayes_prior_losses: float = 2.0
     bayes_confidence_weight: float = 0.35
+    symbol_min_closed_trades: int = 6
+    symbol_min_win_rate: float = 0.55
+    symbol_min_net_pnl: float = 0.0
+    symbol_min_edge_probability: float = 0.55
     max_kelly_fraction: float = 0.005
     exit_max_trade_minutes: int = 240
     exit_breakeven_at_r: float = 1.0
