@@ -273,6 +273,9 @@ class LiveAutoTrader:
         temporal = helper._temporal_gate(config, symbol, signal.generated_at, positions)
         if temporal:
             return self._blocked(symbol, signal.side.value, signal.confidence, temporal)
+        performance = helper._symbol_performance_gate(config, symbol, positions)
+        if performance:
+            return self._blocked(symbol, signal.side.value, signal.confidence, performance)
         edge_probability = helper._bayesian_edge_probability(config, symbol, positions)
         signal = helper._adjust_signal_confidence(config, signal, edge_probability)
         risk = RiskManager(config.risk).evaluate(
