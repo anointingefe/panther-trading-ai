@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PANTHER Trading AI</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="workspace.css" />
   </head>
   <body>
+    <a class="skip-link" href="#workspace-title">Skip to workspace</a>
     <main class="app-shell">
       <aside class="sidebar" aria-label="Primary">
         <a class="brand" href="#command-section" aria-label="PANTHER dashboard home">
@@ -18,12 +20,12 @@
         </a>
 
         <nav class="nav-list" aria-label="Dashboard sections">
-          <a class="active" href="#command-section" aria-current="page">Command</a>
-          <a href="#signals-section">Signals</a>
-          <a href="#targets-section">Targets</a>
-          <a href="#backtests-section">Backtests</a>
-          <a href="#risk-section">Risk Rules</a>
-          <a href="#broker-section">Broker</a>
+          <a class="active" href="#overview" aria-current="page">Overview</a>
+          <a href="#markets">Markets</a>
+          <a href="#execution">Execution</a>
+          <a href="#research">Research</a>
+          <a href="#performance">Performance</a>
+          <a href="#settings">Settings</a>
         </nav>
 
         <section class="guard-card">
@@ -36,8 +38,8 @@
       <section class="workspace">
         <header class="topbar" id="command-section" tabindex="-1">
           <div>
-            <p class="eyebrow">Market command center</p>
-            <h1>Trade only when the evidence is strong.</h1>
+            <p class="eyebrow">Trading workspace</p>
+            <h1 id="workspace-title" tabindex="-1">Overview</h1>
           </div>
           <div class="topbar-actions">
             <label class="market-picker">
@@ -290,7 +292,7 @@
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Execution</p>
-                <h2>Open Demo Trades</h2>
+                <h2>Open Positions</h2>
               </div>
               <span class="pill" id="positions-count">0 open</span>
             </div>
@@ -661,6 +663,7 @@
         </section>
       </section>
     </main>
+    <script src="workspace.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
