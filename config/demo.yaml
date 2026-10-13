@@ -8,8 +8,8 @@ risk:
   account_equity: 10000
   max_risk_per_trade_pct: 1.0
   max_daily_loss_pct: 3.0
-  min_confidence: 0.62
-  max_open_positions: 3
+  min_confidence: 0.70
+  max_open_positions: 2
   max_positions_per_symbol: 1
 
 strategy:
@@ -21,7 +21,7 @@ execution:
   allow_live_trading: false
   default_volume: 0.01
   require_manual_approval: true
-  max_live_volume: 0.1
+  max_live_volume: 0.02
   allowed_live_account_modes:
     - demo
   live_unlock_phrase: PANTHER_LIVE_APPROVED
@@ -30,21 +30,25 @@ demo_auto:
   enabled: false
   interval_seconds: 30
   max_symbols_per_cycle: 96
-  max_orders_per_cycle: 12
-  max_open_positions: 12
+  max_orders_per_cycle: 6
+  max_open_positions: 6
   max_positions_per_symbol: 1
   demo_order_volume: 0.01
-  scout_min_confidence: 0.48
-  scout_volume_multiplier: 0.35
-  loss_cooldown_hours: 6
+  scout_min_confidence: 0.70
+  scout_volume_multiplier: 0.0
+  loss_cooldown_hours: 12
   max_consecutive_symbol_losses: 1
   volatility_spike_multiplier: 2.5
   temporal_min_samples: 8
-  temporal_min_win_rate: 0.65
+  temporal_min_win_rate: 0.70
   bayes_prior_wins: 3.0
   bayes_prior_losses: 2.0
-  bayes_confidence_weight: 0.35
-  max_kelly_fraction: 0.005
+  bayes_confidence_weight: 0.50
+  symbol_min_closed_trades: 6
+  symbol_min_win_rate: 0.55
+  symbol_min_net_pnl: 0.0
+  symbol_min_edge_probability: 0.55
+  max_kelly_fraction: 0.003
   exit_max_trade_minutes: 240
   exit_breakeven_at_r: 1.0
   exit_trail_at_r: 1.5
