@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import math
 
 from panther_trading.models import BrokerStatus, Candle, OrderRequest, OrderResult, OrderStatus, SignalSide
 
@@ -31,6 +32,28 @@ class Broker(ABC):
 
     def close_position(self, position_id: str, reason: str = "exit_manager") -> OrderResult:
         return OrderResult(OrderStatus.REJECTED, f"Broker cannot close position {position_id}: {reason}")
+
+    def estimate_position_risk(
+        self,
+        symbol: str,
+        side: SignalSide,
+        volume: float,
+        entry: float,
+        stop_loss: float,
+    ) -> float:
+        """Estimate money at risk if stop-loss is reached.
+
+        Native brokers should override this with their contract/tick-value aware
+        calculation. The fallback is only suitable for simple simulated brokers.
+        """
+        values = (volume, entry, stop_loss)
+        if any(not math.isfinite(value) or value <= 0 for value in values):
+            return 0.0
+        if side == SignalSide.BUY and stop_loss >= entry:
+            return 0.0
+        if side == SignalSide.SELL and stop_loss <= entry:
+            return 0.0
+        return abs(entry - stop_loss) * volume
 
     def calculate_position_volume(
         self,
