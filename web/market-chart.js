@@ -3,22 +3,29 @@
   const note = document.getElementById('chart-data-note');
   const readout = document.getElementById('candle-readout');
   const library = window.LightweightCharts;
-  if (!library) { note.textContent = 'Chart library unavailable. Reload the page.'; return; }
-  const chart = library.createChart(host, {
-    autoSize: true,
-    localization: { locale: 'en-GB' },
-    layout: { background: { color: '#101416' }, textColor: '#b7c1c9', attributionLogo: true },
-    grid: { vertLines: { color: '#20272b' }, horzLines: { color: '#20272b' } },
-    rightPriceScale: { borderColor: '#374147', scaleMargins: { top: .1, bottom: .24 } },
-    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#374147', rightOffset: 4 },
-    crosshair: { mode: library.CrosshairMode.Normal },
-  });
-  const series = chart.addSeries(library.CandlestickSeries, {
-    upColor: '#34c995', downColor: '#ee6675', borderVisible: false,
-    wickUpColor: '#34c995', wickDownColor: '#ee6675',
-  });
-  const volume = chart.addSeries(library.HistogramSeries, { priceScaleId: 'volume', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
-  volume.priceScale().applyOptions({ scaleMargins: { top: .83, bottom: 0 } });
+  if (!library) { note.textContent = 'Interactive chart unavailable. Using basic candles.'; return; }
+  let chart, series, volume;
+  try {
+    chart = library.createChart(host, {
+      autoSize: true,
+      localization: { locale: 'en-GB' },
+      layout: { background: { color: '#101416' }, textColor: '#b7c1c9', attributionLogo: true },
+      grid: { vertLines: { color: '#20272b' }, horzLines: { color: '#20272b' } },
+      rightPriceScale: { borderColor: '#374147', scaleMargins: { top: .1, bottom: .24 } },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#374147', rightOffset: 4 },
+      crosshair: { mode: library.CrosshairMode.Normal },
+    });
+    series = chart.addSeries(library.CandlestickSeries, {
+      upColor: '#34c995', downColor: '#ee6675', borderVisible: false,
+      wickUpColor: '#34c995', wickDownColor: '#ee6675',
+    });
+    volume = chart.addSeries(library.HistogramSeries, { priceScaleId: 'volume', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
+    volume.priceScale().applyOptions({ scaleMargins: { top: .83, bottom: 0 } });
+  } catch {
+    try { chart?.remove(); } catch { /* The basic SVG chart remains available. */ }
+    note.textContent = 'Interactive chart could not start. Using basic candles.';
+    return;
+  }
   let marketKey = '';
   let latest = null;
   let precision = 5;
@@ -56,4 +63,5 @@
       host.dataset.market = key;
     },
   };
+  document.getElementById('structure-chart').classList.add('interactive-chart');
 })();

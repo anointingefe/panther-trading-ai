@@ -1,6 +1,7 @@
 #structure-chart { min-height: 400px; background: #101416; }
-#candle-chart { position: absolute; inset: 0; }
-#structure-chart > :not(#candle-chart) { display: none; }
+#candle-chart { position: absolute; inset: 0; display: none; }
+#structure-chart.interactive-chart #candle-chart { display: block; }
+#structure-chart.interactive-chart > :not(#candle-chart) { display: none; }
 #structure-chart::before, #structure-chart::after { display: none; }
 #candle-chart svg { position: static; width: auto; height: auto; }
 .candle-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
@@ -15,12 +16,24 @@
 .trade-event.win strong { color: var(--accent); }
 .trade-event.loss strong { color: var(--danger); }
 #trade-toasts { position: fixed; bottom: 24px; right: 24px; width: min(380px, calc(100vw - 32px)); z-index: 30; display: grid; gap: 10px; pointer-events: none; }
+#trade-alert-panel:not([hidden]) + #trade-toasts { display: none; }
 .trade-toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent-2); border-radius: 6px; padding: 16px; box-shadow: 0 8px 24px #0006; pointer-events: auto; }
 .trade-toast button { float: right; padding: 4px 8px; min-height: 32px; margin-left: 8px; }
 .trade-toast strong, .trade-toast span { display: block; }
 .trade-toast.win { border-left-color: var(--accent); }
 .trade-toast.loss { border-left-color: var(--danger); }
 #trade-alert-status { color: var(--muted); font-size: 12px; margin-top: 14px; }
+.trade-sound-controls { min-width: 0; margin: 20px 0 0; padding: 16px 0 0; border: 0; border-top: 1px solid var(--line); }
+.trade-sound-controls legend { padding: 0 8px 0 0; font-size: 12px; color: var(--muted); }
+.trade-sound-toggle { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.trade-sound-toggle input { width: 20px; height: 20px; accent-color: var(--accent); }
+.trade-sound-volume-row { display: grid; grid-template-columns: auto minmax(50px, 1fr) 4ch; align-items: center; gap: 12px; margin: 8px 0 12px; font-size: 13px; }
+.trade-sound-volume-row input { width: 100%; min-width: 0; min-height: 44px; margin: 0; accent-color: var(--accent); }
+.trade-sound-volume-row output { text-align: right; font-variant-numeric: tabular-nums; }
+.trade-sound-controls :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#trade-sound-status { color: var(--muted); font-size: 12px; line-height: 1.5; margin-bottom: 0; }
+.trade-alert-panel button { white-space: normal; }
+.trade-event, .trade-toast { overflow-wrap: anywhere; }
 @media (max-width: 680px) {
   #structure-chart { min-height: 320px; }
   #run-scan { grid-column: auto; }

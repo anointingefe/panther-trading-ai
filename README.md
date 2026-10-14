@@ -130,6 +130,24 @@ The dashboard includes a Demo / Live execution toggle. The Live side is a
 guarded control: it stays locked unless backend config explicitly enables live
 trading. This prevents the UI from becoming a one-click live-trade switch.
 
+## Trade Notifications and Sound
+
+The dashboard's **Trades** panel reports confirmed Panther trade events. Open
+**Trades > Trade sounds** to enable audio, then use the volume slider or **Test
+sound**. Your sound preference and volume are saved in this browser. Opening,
+increasing, partially closing, reversing, winning, losing, and breakeven events
+have distinct short cues. An unknown close result uses a neutral cue, never a
+win sound. Sounds use local Web Audio synthesis without downloaded media.
+
+Notifications check every 5 seconds while the dashboard is open. Historical
+events on first connection and duplicate poll results do not play sounds.
+After a reload or browser audio interruption, click **Test sound** to re-enable
+audio. Missed sounds are not replayed on unlock. Muting cancels queued cues;
+desktop notifications stay silent so they do not double the dashboard sound.
+Phone sleep, a suspended browser tab, a muted device, or a closed dashboard can
+prevent alerts; these are not guaranteed background push notifications. Audio
+controls do not enable trading or change risk limits.
+
 ## Demo Auto Runner
 
 PANTHER now includes a guarded MT5 demo proving engine. It is separate from the
