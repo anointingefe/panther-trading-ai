@@ -132,9 +132,9 @@ class PantherConfig:
     strategy: StrategyConfig
     execution: ExecutionConfig
     demo_auto: DemoAutoConfig
-    live_scout: LiveScoutConfig
     validation: ValidationConfig
     beast_mode: BeastModeConfig
+    live_scout: LiveScoutConfig = LiveScoutConfig()
     shadow_execution: ShadowExecutionConfig = ShadowExecutionConfig()
 
 
@@ -155,9 +155,9 @@ def load_config(path: str | Path) -> PantherConfig:
         strategy=StrategyConfig(**_section(raw, "strategy")),
         execution=ExecutionConfig(**execution),
         demo_auto=DemoAutoConfig(**demo_auto),
-        live_scout=LiveScoutConfig(**live_scout),
         validation=ValidationConfig(**raw.get("validation", {})),
         beast_mode=BeastModeConfig(**raw.get("beast_mode", {})),
+        live_scout=LiveScoutConfig(**live_scout),
         shadow_execution=ShadowExecutionConfig(**raw.get("shadow_execution", {})),
     )
 
