@@ -18,6 +18,7 @@ from panther_trading.data import StaticSentimentCollector
 from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.goals import GoalTracker
 from panther_trading.models import TradeSignal
+from panther_trading.portfolio_risk import ApprovedLivePortfolioRisk, exposure_buckets
 from panther_trading.positions import PaperPositionBook
 from panther_trading.preflight import execution_preflight
 from panther_trading.risk import RiskManager
@@ -48,6 +49,7 @@ class LiveScoutDecision:
     generated_at: str | None = None
     rationale: tuple[str, ...] = ()
     preflight: dict[str, Any] | None = None
+    portfolio_risk: dict[str, Any] | None = None
     approval_required: bool = True
 
 
@@ -142,9 +144,15 @@ class LiveScoutTrader:
         state["enabled"] = config.live_scout.enabled
         state["intervalSeconds"] = config.live_scout.interval_seconds
         state["approvalRequired"] = True
+        state["portfolioModel"] = {
+            "maxOpenPositions": config.live_scout.model_max_open_positions,
+            "maxPortfolioRiskPct": config.live_scout.model_max_portfolio_risk_pct,
+            "maxExposureBucketRiskPct": config.live_scout.model_max_exposure_bucket_risk_pct,
+            "maxPositionsPerSymbol": config.risk.max_positions_per_symbol,
+        }
         state["policy"] = (
-            "Panther may scan, learn, rank, size and preflight continuously. "
-            "Real-money submission requires explicit approval for the selected ticket."
+            "Panther may scan, learn, rank, size and preflight continuously using the portfolio model. "
+            "Real-money submission permissions are unchanged and explicit approval is still required."
         )
         return state
 
@@ -265,8 +273,8 @@ class LiveScoutTrader:
     ) -> LiveScoutDecision:
         if goal_pressure["daily_target_met"]:
             return self._blocked(symbol, "hold", 0.0, "Daily target reached; protecting gains until tomorrow")
-        if broker.count_open_positions() >= config.risk.max_open_positions:
-            return self._blocked(symbol, "hold", 0.0, "Maximum total live positions reached")
+        if broker.count_open_positions() >= config.live_scout.model_max_open_positions:
+            return self._blocked(symbol, "hold", 0.0, "Ten-position portfolio model is fully allocated")
         if broker.count_open_positions(symbol) >= config.risk.max_positions_per_symbol:
             return self._blocked(symbol, "hold", 0.0, "Maximum live positions reached for symbol")
         cooldown = helper._cooldown_reason(config, symbol, loss_state)
@@ -294,7 +302,11 @@ class LiveScoutTrader:
         edge_probability = helper._bayesian_edge_probability(config, symbol, positions)
         signal = helper._adjust_signal_confidence(config, signal, edge_probability)
 
-        base_risk = RiskManager(config.risk).evaluate(
+        scout_risk_config = replace(
+            config.risk,
+            max_open_positions=config.live_scout.model_max_open_positions,
+        )
+        base_risk = RiskManager(scout_risk_config).evaluate(
             signal,
             open_positions=broker.count_open_positions(),
             daily_pnl=daily_pnl,
@@ -319,9 +331,39 @@ class LiveScoutTrader:
                 learning_adjustment=assessment.rank_adjustment,
             )
 
-        volume = self._live_volume(config, broker, signal, goal_pressure)
+        portfolio_guard = ApprovedLivePortfolioRisk(
+            broker,
+            equity=config.risk.account_equity,
+            max_portfolio_risk_pct=config.live_scout.model_max_portfolio_risk_pct,
+            max_exposure_bucket_risk_pct=config.live_scout.model_max_exposure_bucket_risk_pct,
+        )
+        available_risk, portfolio_snapshot, portfolio_reasons = portfolio_guard.available_risk_for(signal)
+        portfolio_payload = {
+            **portfolio_snapshot.to_dict(),
+            "availableRiskForCandidate": available_risk,
+            "candidateExposureBuckets": list(exposure_buckets(signal.symbol, signal.side)),
+        }
+        if available_risk <= 0:
+            return self._blocked(
+                symbol,
+                signal.side.value,
+                signal.confidence,
+                "; ".join(portfolio_reasons or ("No aggregate portfolio risk budget remains",)),
+                rank_score=signal.confidence + assessment.rank_adjustment,
+                learning_quality=assessment.quality_score,
+                learning_adjustment=assessment.rank_adjustment,
+                portfolio_risk=portfolio_payload,
+            )
+
+        volume = self._live_volume(config, broker, signal, goal_pressure, risk_budget=available_risk)
         if volume <= 0:
-            return self._blocked(symbol, signal.side.value, signal.confidence, "No broker-valid volume fits the live risk budget")
+            return self._blocked(
+                symbol,
+                signal.side.value,
+                signal.confidence,
+                "No broker-valid volume fits the aggregate portfolio risk budget",
+                portfolio_risk=portfolio_payload,
+            )
         preflight = execution_preflight(
             broker,
             signal.symbol,
@@ -342,6 +384,7 @@ class LiveScoutTrader:
                 learning_quality=assessment.quality_score,
                 learning_adjustment=assessment.rank_adjustment,
                 preflight=preflight,
+                portfolio_risk=portfolio_payload,
             )
 
         generated_at = datetime.now(timezone.utc).isoformat()
@@ -350,6 +393,11 @@ class LiveScoutTrader:
                 *signal.rationale,
                 f"Adaptive selection quality {assessment.quality_score:.0%}; ranking adjustment {assessment.rank_adjustment:+.3f}.",
                 "Base confidence and risk floors remain unchanged; learning cannot increase configured risk.",
+                (
+                    f"Ten-position portfolio model passed: open stop-risk {portfolio_snapshot.total_open_risk_pct:.2f}% "
+                    f"of {config.live_scout.model_max_portfolio_risk_pct:.2f}% cap; candidate respects "
+                    f"{config.live_scout.model_max_exposure_bucket_risk_pct:.2f}% directional bucket cap."
+                ),
                 "Broker-native preflight passed. Explicit approval is required before live submission.",
             ]
         )
@@ -371,10 +419,18 @@ class LiveScoutTrader:
             generated_at=generated_at,
             rationale=rationale,
             preflight=preflight,
+            portfolio_risk=portfolio_payload,
             approval_required=True,
         )
 
-    def _live_volume(self, config: Any, broker: Broker, signal: TradeSignal, goal_pressure: dict[str, Any]) -> float:
+    def _live_volume(
+        self,
+        config: Any,
+        broker: Broker,
+        signal: TradeSignal,
+        goal_pressure: dict[str, Any],
+        risk_budget: float | None = None,
+    ) -> float:
         equity = broker.get_status().equity
         if equity is None or not math.isfinite(equity) or equity <= 0:
             return 0.0
@@ -383,6 +439,8 @@ class LiveScoutTrader:
             risk_amount *= 0.5
         elif goal_pressure["weekly_progress"] >= 0.85 or goal_pressure["monthly_progress"] >= 0.85:
             risk_amount *= 0.65
+        if risk_budget is not None:
+            risk_amount = min(risk_amount, max(float(risk_budget), 0.0))
         return broker.calculate_position_volume(
             signal.symbol,
             signal.side,
@@ -411,6 +469,7 @@ class LiveScoutTrader:
         learning_quality: float | None = None,
         learning_adjustment: float | None = None,
         preflight: dict[str, Any] | None = None,
+        portfolio_risk: dict[str, Any] | None = None,
     ) -> LiveScoutDecision:
         return LiveScoutDecision(
             ticket_id=None,
@@ -423,6 +482,7 @@ class LiveScoutTrader:
             learning_quality=learning_quality,
             learning_adjustment=learning_adjustment,
             preflight=preflight,
+            portfolio_risk=portfolio_risk,
         )
 
     def _blocked_cycle(self, started_at: datetime, broker_mode: str, reason: str) -> LiveScoutCycle:

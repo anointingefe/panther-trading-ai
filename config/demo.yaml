@@ -65,6 +65,9 @@ live_scout:
   history_sync_days: 30
   learning_min_segment_samples: 6
   ticket_max_age_seconds: 120
+  model_max_open_positions: 10
+  model_max_portfolio_risk_pct: 3.0
+  model_max_exposure_bucket_risk_pct: 1.5
   allowed_account_modes:
     - demo
     - contest

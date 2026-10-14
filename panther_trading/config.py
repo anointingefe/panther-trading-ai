@@ -82,6 +82,9 @@ class LiveScoutConfig:
     learning_min_segment_samples: int = 6
     ticket_max_age_seconds: int = 120
     allowed_account_modes: tuple[str, ...] = ("demo", "contest", "real")
+    model_max_open_positions: int = 10
+    model_max_portfolio_risk_pct: float = 3.0
+    model_max_exposure_bucket_risk_pct: float = 1.5
 
 
 @dataclass(frozen=True)
