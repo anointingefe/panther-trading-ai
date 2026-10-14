@@ -87,6 +87,24 @@ def test_green_flag_blocks_missing_take_profit_and_recent_loss_streak() -> None:
     assert any("loss streak" in reason for reason in report.reasons)
 
 
+def test_green_flag_ignores_live_mt5_history() -> None:
+    config = _config()
+    positions = [_position(index, 1.0) for index in range(110)]
+    for position in positions:
+        position["metadata"] = {"source": "mt5", "comment": "PANTHER live auto"}
+    edge = {
+        "status": "passed",
+        "trading_days": 24,
+    }
+
+    report = RealMoneyGreenFlag(config).evaluate(positions, edge, {"name": "MetaTrader 5", "connected": True})
+
+    assert not report.passed
+    assert report.status == "building_evidence"
+    assert report.closed_trades == 0
+    assert report.recent_trades == 0
+
+
 def test_live_guard_blocks_when_green_flag_fails_even_if_edge_passes() -> None:
     config = _config()
     readiness = LiveTradingGate(config.execution).readiness(
