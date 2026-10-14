@@ -57,6 +57,19 @@ demo_auto:
     - contest
     - paper
 
+live_scout:
+  enabled: true
+  interval_seconds: 30
+  max_symbols_per_cycle: 96
+  max_candidates_per_cycle: 12
+  history_sync_days: 30
+  learning_min_segment_samples: 6
+  ticket_max_age_seconds: 120
+  allowed_account_modes:
+    - demo
+    - contest
+    - real
+
 validation:
   min_demo_trades: 30
   min_demo_days: 14
