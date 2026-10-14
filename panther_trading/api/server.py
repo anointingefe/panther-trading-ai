@@ -18,39 +18,62 @@ from panther_trading.advisor import (
 )
 from panther_trading.api.snapshot import broker_status, build_dashboard_snapshot, build_market_structure_snapshot
 from panther_trading.beast_mode import BeastModeStore
+from panther_trading.brokers import create_broker
 from panther_trading.config import load_config
 from panther_trading.data.markets import market_universe
-from panther_trading.journal import TradeJournal
-from panther_trading.learning import EvolutionEngine
-from panther_trading.live_guard import LiveTradingGate
-from panther_trading.live_auto import LiveAutoRunner, LiveAutoTrader
 from panther_trading.demo_auto import DemoAutoRunner, DemoAutoTrader
+from panther_trading.execution_green_flag import ExecutionGreenFlag
 from panther_trading.exits import ExitManager
 from panther_trading.goals import GoalTracker
+from panther_trading.green_flag import RealMoneyGreenFlag
+from panther_trading.journal import TradeJournal
+from panther_trading.learning import EvolutionEngine
+from panther_trading.live_auto import LiveAutoRunner, LiveAutoTrader
+from panther_trading.live_guard import LiveTradingGate
+from panther_trading.live_ledger import LivePositionLedger
 from panther_trading.positions import PaperPositionBook
+from panther_trading.reconciliation import BrokerReconciler
 from panther_trading.research import StrategyResearchLab
-from panther_trading.brokers import create_broker
-from panther_trading.validation import EdgeValidationGate
+from panther_trading.shadow_execution import (
+    DEFAULT_LIVE_LEDGER,
+    DEFAULT_SHADOW_STATE,
+    ShadowExecutionRunner,
+    ShadowExecutionStore,
+    ShadowExecutionTrader,
+)
 from panther_trading.trade_events import collect_trade_events
+from panther_trading.validation import EdgeValidationGate
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEB_ROOT = PROJECT_ROOT / "web"
+CONFIG_PATH = PROJECT_ROOT / "config/demo.yaml"
 JOURNAL = TradeJournal(PROJECT_ROOT / "var/trade_journal.jsonl")
 POSITIONS = PaperPositionBook(PROJECT_ROOT / "var/paper_positions.jsonl")
 GOALS = GoalTracker(PROJECT_ROOT / "var/trading_goals.json")
 BEAST_MODE = BeastModeStore(PROJECT_ROOT / "var/beast_mode.json")
+LIVE_LEDGER = LivePositionLedger(DEFAULT_LIVE_LEDGER)
 DEMO_AUTO = DemoAutoRunner(
-    DemoAutoTrader(PROJECT_ROOT / "config/demo.yaml", PROJECT_ROOT / "var/demo_auto_state.json"),
-    interval_seconds=load_config(PROJECT_ROOT / "config/demo.yaml").demo_auto.interval_seconds,
+    DemoAutoTrader(CONFIG_PATH, PROJECT_ROOT / "var/demo_auto_state.json"),
+    interval_seconds=load_config(CONFIG_PATH).demo_auto.interval_seconds,
+)
+SHADOW_EXECUTION = ShadowExecutionRunner(
+    ShadowExecutionTrader(
+        CONFIG_PATH,
+        PROJECT_ROOT / "var/paper_positions.jsonl",
+        DEFAULT_SHADOW_STATE,
+        PROJECT_ROOT / "var/trading_goals.json",
+        DEFAULT_LIVE_LEDGER,
+    ),
+    interval_seconds=load_config(CONFIG_PATH).shadow_execution.interval_seconds,
 )
 LIVE_AUTO = LiveAutoRunner(
     LiveAutoTrader(
-        PROJECT_ROOT / "config/demo.yaml",
+        CONFIG_PATH,
         PROJECT_ROOT / "var/paper_positions.jsonl",
         PROJECT_ROOT / "var/live_auto_state.json",
     ),
-    interval_seconds=load_config(PROJECT_ROOT / "config/demo.yaml").demo_auto.interval_seconds,
+    interval_seconds=load_config(CONFIG_PATH).demo_auto.interval_seconds,
 )
 
 
@@ -83,6 +106,18 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/live-auto/status":
             self._send_json({"liveAuto": LIVE_AUTO.status()})
+            return
+        if path == "/api/shadow/status":
+            self._send_json({"shadowExecution": SHADOW_EXECUTION.status()})
+            return
+        if path == "/api/live/execution-green-flag":
+            self._send_json({"executionGreenFlag": self._execution_green_flag()})
+            return
+        if path == "/api/live/reconciliation":
+            try:
+                self._send_json({"reconciliation": self._reconciliation()})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/validation/edge":
             self._send_json({"edgeValidation": self._edge_validation()})
@@ -118,7 +153,7 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"goals": GOALS.report(POSITIONS.latest(limit=1000))})
             return
         if path == "/api/beast-mode":
-            self._send_json({"beastMode": BEAST_MODE.status(load_config(PROJECT_ROOT / "config/demo.yaml"), POSITIONS.latest(limit=1000))})
+            self._send_json({"beastMode": BEAST_MODE.status(load_config(CONFIG_PATH), POSITIONS.latest(limit=1000))})
             return
         if path == "/api/research/strategies":
             query = parse_qs(parsed.query)
@@ -144,7 +179,7 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             symbol = query.get("symbol", [None])[0]
             record = str(query.get("record", ["true"])[0]).lower() not in {"0", "false", "no"}
             try:
-                self._send_json(build_dashboard_snapshot(PROJECT_ROOT / "config/demo.yaml", symbol=symbol, record=record))
+                self._send_json(build_dashboard_snapshot(CONFIG_PATH, symbol=symbol, record=record))
             except Exception as exc:
                 self._send_json({"error": f"Snapshot build failed: {exc}"}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -157,7 +192,7 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     {
                         "marketStructure": build_market_structure_snapshot(
-                            PROJECT_ROOT / "config/demo.yaml",
+                            CONFIG_PATH,
                             symbol=symbol,
                             timeframe=timeframe,
                             count=count,
@@ -181,7 +216,7 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
                 )
                 position = None
                 if updated["approval_status"] == "approved":
-                    config = load_config(PROJECT_ROOT / "config/demo.yaml")
+                    config = load_config(CONFIG_PATH)
                     position = POSITIONS.open_from_journal(
                         updated,
                         volume=config.execution.default_volume,
@@ -280,6 +315,27 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/demo-auto/stop":
             self._send_json({"demoAuto": DEMO_AUTO.stop()})
             return
+        if parsed.path == "/api/shadow/cycle":
+            try:
+                self._send_json({"shadowExecution": SHADOW_EXECUTION.run_once()})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/shadow/start":
+            try:
+                self._send_json({"shadowExecution": SHADOW_EXECUTION.start()})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/shadow/stop":
+            self._send_json({"shadowExecution": SHADOW_EXECUTION.stop()})
+            return
+        if parsed.path == "/api/live/reconcile":
+            try:
+                self._send_json({"reconciliation": self._reconciliation()})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         if parsed.path == "/api/live-auto/cycle":
             try:
                 payload = self._read_json_body()
@@ -311,7 +367,7 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
                 if "enabled" not in payload:
                     raise ValueError("Missing enabled flag")
                 BEAST_MODE.update(_bool_flag(payload["enabled"]))
-                self._send_json({"beastMode": BEAST_MODE.status(load_config(PROJECT_ROOT / "config/demo.yaml"), POSITIONS.latest(limit=1000))})
+                self._send_json({"beastMode": BEAST_MODE.status(load_config(CONFIG_PATH), POSITIONS.latest(limit=1000))})
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -346,10 +402,11 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
         requested_volume: float | None = None,
         unlock_phrase: str | None = None,
     ) -> dict:
-        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        config = load_config(CONFIG_PATH)
         edge_validation = self._edge_validation()
         broker = broker_status()
         green_flag = self._green_flag(edge_validation=edge_validation, broker=broker)
+        execution_flag = self._execution_green_flag()
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=broker,
             approval_status=approval_status,
@@ -357,27 +414,39 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
             unlock_phrase=unlock_phrase,
             edge_validation_status=edge_validation["status"],
             green_flag_status=green_flag["status"],
+            execution_green_flag_status=execution_flag["status"],
         )
         return {
             "enabled": readiness.enabled,
             "armed": readiness.armed,
             "reasons": list(readiness.reasons),
             "checklist": list(readiness.checklist),
+            "strategyGreenFlag": green_flag,
+            "executionGreenFlag": execution_flag,
         }
 
     def _edge_validation(self) -> dict:
-        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        config = load_config(CONFIG_PATH)
         return EdgeValidationGate(config.validation).evaluate(POSITIONS.latest(limit=1000)).to_dict()
 
     def _green_flag(self, edge_validation: dict | None = None, broker: dict | None = None) -> dict:
-        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        config = load_config(CONFIG_PATH)
         positions = POSITIONS.latest(limit=1000)
         edge = edge_validation or EdgeValidationGate(config.validation).evaluate(positions).to_dict()
         status = broker if broker is not None else broker_status()
         return RealMoneyGreenFlag(config).evaluate(positions, edge, status).to_dict()
 
+    def _execution_green_flag(self) -> dict:
+        config = load_config(CONFIG_PATH)
+        state = ShadowExecutionStore(DEFAULT_SHADOW_STATE, config.shadow_execution.max_samples_retained).state()
+        return ExecutionGreenFlag(config).evaluate(state).to_dict()
+
+    def _reconciliation(self) -> dict:
+        broker = create_broker("mt5")
+        return BrokerReconciler().reconcile(LIVE_LEDGER, broker).to_dict()
+
     def _learning_report(self, symbol: str, timeframe: str) -> dict:
-        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        config = load_config(CONFIG_PATH)
         try:
             research = StrategyResearchLab(create_broker()).run(symbol, timeframe=timeframe)
         except Exception:
@@ -392,7 +461,7 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
         ).to_dict()
 
     def _exit_review(self) -> dict:
-        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        config = load_config(CONFIG_PATH)
         fallback = create_broker("simulated")
         try:
             broker = create_broker()
@@ -433,7 +502,7 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
         from panther_trading.strategies import SmaSentimentStrategy
         from panther_trading.api.snapshot import _sentiment_from_intelligence
 
-        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        config = load_config(CONFIG_PATH)
         fallback = create_broker("simulated")
         try:
             broker = create_broker()
