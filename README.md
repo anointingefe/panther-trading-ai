@@ -265,6 +265,22 @@ decisions to local paper positions:
 The MT5 adapter now has PANTHER-tagged open-position discovery and close-order
 support, but live execution remains behind the existing guard rails.
 
+## Real-Money Green Flag
+
+PANTHER now has a stricter final promotion gate before live funding should be
+considered. The green flag requires at least 100 closed demo trades, 20 separate
+demo trading days, stop-loss protection on every closed trade, take-profit
+targets on almost every closed trade, strong recent win/profit-factor/net-R
+performance, controlled recent drawdown, and no active loss streak problem.
+
+The live guard consumes this result, so live auto execution remains blocked when
+the green flag is still building evidence even if the base edge-validation gate
+passes. Inspect it at:
+
+- `GET /api/live/green-flag`
+
+See `docs/REAL_MONEY_GREEN_FLAG.md` for the full operator checklist.
+
 ## Live Trading Guard
 
 PANTHER includes the live-trading control path, but it is inactive by default.

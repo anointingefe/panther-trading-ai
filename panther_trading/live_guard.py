@@ -25,6 +25,7 @@ class LiveTradingGate:
         requested_volume: float | None = None,
         unlock_phrase: str | None = None,
         edge_validation_status: str | None = None,
+        green_flag_status: str | None = None,
     ) -> LiveReadiness:
         reasons: list[str] = []
         checklist = [
@@ -34,6 +35,7 @@ class LiveTradingGate:
             "Manual approval must exist for the exact signal.",
             "Requested volume must be inside the live cap.",
             "Demo edge validation must pass.",
+            "Real-money green flag must pass.",
             "Operator must provide the live unlock phrase.",
         ]
 
@@ -62,6 +64,9 @@ class LiveTradingGate:
 
         if edge_validation_status != "passed":
             reasons.append("Demo edge validation has not passed.")
+
+        if green_flag_status is not None and green_flag_status != "passed":
+            reasons.append("Real-money green flag has not passed.")
 
         if unlock_phrase != self.config.live_unlock_phrase:
             reasons.append("Live unlock phrase was not provided.")

@@ -17,6 +17,7 @@ from panther_trading.data import StaticSentimentCollector
 from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.execution import ExecutionEngine
 from panther_trading.goals import GoalTracker
+from panther_trading.green_flag import RealMoneyGreenFlag
 from panther_trading.live_guard import LiveTradingGate
 from panther_trading.models import OrderRequest, OrderStatus, SignalSide, TradeSignal
 from panther_trading.positions import PaperPositionBook
@@ -106,12 +107,15 @@ class LiveAutoTrader:
     def status(self) -> dict[str, Any]:
         config = load_config(self.config_path)
         config = apply_beast_mode(config, BeastModeStore(self.beast_mode_path).load().enabled, self._positions())
-        edge = EdgeValidationGate(config.validation).evaluate(self._positions()).to_dict()
+        positions = self._positions()
+        edge = EdgeValidationGate(config.validation).evaluate(positions).to_dict()
+        green_flag = RealMoneyGreenFlag(config).evaluate(positions, edge, self._broker_status()).to_dict()
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=self._broker_status(),
             approval_status=None,
             requested_volume=config.execution.default_volume,
             edge_validation_status=edge["status"],
+            green_flag_status=green_flag["status"],
             unlock_phrase=None,
         )
         payload = LiveAutoStatus(
@@ -171,11 +175,13 @@ class LiveAutoTrader:
             return cycle
         config = replace(config, risk=replace(config.risk, account_equity=equity))
         requested_volume = min(config.demo_auto.demo_order_volume, config.execution.max_live_volume)
+        green_flag = RealMoneyGreenFlag(config).evaluate(positions, edge, broker_status).to_dict()
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=broker_status,
             approval_status=None,
             requested_volume=requested_volume,
             edge_validation_status=edge["status"],
+            green_flag_status=green_flag["status"],
             unlock_phrase=unlock_phrase,
         )
         if not readiness.armed:
@@ -232,11 +238,14 @@ class LiveAutoTrader:
         positions = self._positions()
         config = apply_beast_mode(config, BeastModeStore(self.beast_mode_path).load().enabled, positions)
         edge = EdgeValidationGate(config.validation).evaluate(positions).to_dict()
+        broker_status = self._broker_status("mt5")
+        green_flag = RealMoneyGreenFlag(config).evaluate(positions, edge, broker_status).to_dict()
         readiness = LiveTradingGate(config.execution).readiness(
-            broker_status=self._broker_status("mt5"),
+            broker_status=broker_status,
             approval_status=str(journal_entry.get("approval_status")),
             requested_volume=config.execution.default_volume,
             edge_validation_status=edge["status"],
+            green_flag_status=green_flag["status"],
             unlock_phrase=unlock_phrase,
         )
         if not readiness.armed:

@@ -24,6 +24,7 @@ from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.execution import ExecutionEngine
 from panther_trading.exits import ExitManager
 from panther_trading.goals import GoalTracker
+from panther_trading.green_flag import RealMoneyGreenFlag
 from panther_trading.journal import TradeJournal
 from panther_trading.knowledge import EliteTradingDoctrine
 from panther_trading.learning import EvolutionEngine
@@ -86,11 +87,13 @@ def build_dashboard_snapshot(
     broker = broker_status()
     goals = GoalTracker(DEFAULT_GOALS).report(position_history)
     edge_validation = EdgeValidationGate(config.validation).evaluate(position_history)
+    green_flag = RealMoneyGreenFlag(config).evaluate(position_history, edge_validation.to_dict(), broker)
     live_readiness = LiveTradingGate(config.execution).readiness(
         broker_status=broker,
         approval_status=None,
         requested_volume=config.execution.default_volume,
         edge_validation_status=edge_validation.status,
+        green_flag_status=green_flag.status,
     )
     research, research_source, research_error = _safe_research(
         market_broker if signal_source == market_source else simulator,
@@ -161,6 +164,7 @@ def build_dashboard_snapshot(
         "positions": positions.open_positions(),
         "goals": goals,
         "edgeValidation": edge_validation.to_dict(),
+        "greenFlag": green_flag.to_dict(),
         "learning": learning.to_dict(),
         "exitReview": exit_review,
         "marketIntelligence": market_intelligence,
