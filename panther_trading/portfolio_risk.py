@@ -63,7 +63,7 @@ class ApprovedLivePortfolioRisk:
                 stop_loss = float(position.get("stop_loss") or 0.0)
             except (TypeError, ValueError):
                 continue
-            risk = self.broker.estimate_position_risk(symbol, side, volume, entry, stop_loss)
+            risk = self._position_risk(symbol, side, volume, entry, stop_loss)
             if not math.isfinite(risk) or risk <= 0:
                 continue
             total_risk += risk
@@ -96,6 +96,27 @@ class ApprovedLivePortfolioRisk:
                 reasons.append(f"Exposure bucket {bucket} is at its risk cap")
 
         return max(round(remaining, 4), 0.0), snapshot, tuple(reasons)
+
+    def _position_risk(
+        self,
+        symbol: str,
+        side: SignalSide,
+        volume: float,
+        entry: float,
+        stop_loss: float,
+    ) -> float:
+        # MT5 exposes a contract/tick-value-aware per-lot risk calculation. Use
+        # it when available so FX, metals, indices, and CFDs are all measured in
+        # account currency rather than raw price-distance units.
+        native = getattr(self.broker, "_risk_per_lot", None)
+        if callable(native):
+            try:
+                per_lot = float(native(symbol, side, entry, stop_loss))
+                if math.isfinite(per_lot) and per_lot > 0 and math.isfinite(volume) and volume > 0:
+                    return per_lot * volume
+            except Exception:
+                pass
+        return self.broker.estimate_position_risk(symbol, side, volume, entry, stop_loss)
 
 
 def exposure_buckets(symbol: str, side: SignalSide) -> tuple[str, ...]:
