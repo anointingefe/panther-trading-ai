@@ -36,7 +36,9 @@
   function eventText(event, payload) {
     const label = { opened: 'Opened', increased: 'Position increased', closed: 'Closed', partial_close: 'Partial close', reversed: 'Position reversed' }[event.kind] || event.kind;
     const title = `${event.symbol} ${event.side.toUpperCase()} · ${label}${event.outcome ? ` · ${event.outcome.toUpperCase()}` : ''}`;
-    const pnl = event.pnl == null ? (event.kind === 'closed' ? 'Result unavailable' : '') : `${event.kind === 'partial_close' ? 'Exit deal P/L' : 'Net P/L'} ${Number(event.pnl).toFixed(2)} ${payload.currency || 'units'}`;
+    const amount = Number(event.pnl);
+    const formatted = payload.currency ? amount.toFixed(2) : Number(amount.toPrecision(6)).toString();
+    const pnl = event.pnl == null ? (event.kind === 'closed' ? 'Result unavailable' : '') : `${event.kind === 'partial_close' ? 'Exit deal P/L' : 'Net P/L'} ${formatted} ${payload.currency || 'units'}`;
     return { title, body: `${event.volume} lots · ${payload.source.toUpperCase()} ${payload.mode} · ${pnl}` };
   }
   function notify(event, payload) {
@@ -52,13 +54,15 @@
     while (toasts.children.length > 3) toasts.firstElementChild.remove();
     setTimeout(() => toast.remove(), 12000);
     if (panel.hidden) { unread++; document.getElementById('trade-alert-count').textContent = String(unread); }
+    try { window.PantherTradeSounds?.play(event); } catch { /* Audio must never interrupt visual alerts or polling. */ }
     if (desktopEnabled && 'Notification' in window && Notification.permission === 'granted') {
-      try { new Notification(text.title, { body: text.body, tag: `${scope}:${event.id}` }); } catch { /* In-app notification remains available. */ }
+      try { new Notification(text.title, { body: text.body, tag: `${scope}:${event.id}`, silent: true }); } catch { /* In-app notification remains available. */ }
     }
   }
   function consume(payload) {
     if (!payload.scope || !Array.isArray(payload.events) || !Number.isFinite(payload.asOf)) throw new Error('Invalid event response');
     if (scope !== payload.scope) {
+      window.PantherTradeSounds?.silence();
       scope = payload.scope;
       state = load(storageKey(scope));
       if (!state || !Array.isArray(state.seen) || !Array.isArray(state.events) || !Number.isFinite(state.cursor)) state = null;

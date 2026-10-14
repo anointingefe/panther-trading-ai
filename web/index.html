@@ -676,11 +676,23 @@
       <div class="panel-head"><h2>Trade notifications</h2><button id="trade-alert-close" class="ghost-button" type="button" aria-label="Close notifications">Close</button></div>
       <p id="trade-alert-status" role="status">Connecting to trade events...</p>
       <button id="trade-desktop-enable" class="ghost-button" type="button">Enable desktop notifications</button>
+      <fieldset class="trade-sound-controls">
+        <legend>Notification audio</legend>
+        <label class="trade-sound-toggle" for="trade-sound-enabled"><input id="trade-sound-enabled" type="checkbox" role="switch" /> Trade sounds</label>
+        <div class="trade-sound-volume-row">
+          <label for="trade-sound-volume">Volume</label>
+          <input id="trade-sound-volume" type="range" min="0" max="100" step="5" value="40" disabled />
+          <output id="trade-sound-level" for="trade-sound-volume">40%</output>
+        </div>
+        <button id="trade-sound-test" class="ghost-button" type="button" disabled>Test sound</button>
+        <p id="trade-sound-status" role="status">Sound off</p>
+      </fieldset>
       <ol id="trade-alert-history"></ol>
     </aside>
     <div id="trade-toasts" aria-live="polite" aria-relevant="additions" aria-label="New trade events"></div>
     <script src="vendor/lightweight-charts-5.0.9.js"></script>
     <script src="market-chart.js"></script>
+    <script src="trade-sounds.js"></script>
     <script src="trade-alerts.js"></script>
     <script src="workspace.js"></script>
     <script src="app.js"></script>
