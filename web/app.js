@@ -97,6 +97,22 @@ const fallbackSnapshot = {
     net_r: 0,
     max_drawdown_r: 0
   },
+  greenFlag: {
+    status: "building_evidence",
+    passed: false,
+    score: 0,
+    reasons: ["Needs at least 100 closed demo trades before real money."],
+    checklist: ["At least 100 closed demo trades.", "Every trade must have SL and TP."],
+    closed_trades: 0,
+    recent_trades: 0,
+    protected_trade_rate: 0,
+    take_profit_rate: 0,
+    recent_win_rate: 0,
+    recent_profit_factor: 0,
+    recent_net_r: 0,
+    recent_max_drawdown_r: 0,
+    consecutive_losses: 0
+  },
   learning: {
     status: "learning",
     phase: "observation",
@@ -358,6 +374,7 @@ function renderDashboard(data) {
   renderBroker(data.broker || fallbackSnapshot.broker);
   renderExecutionMode(data.executionMode || fallbackSnapshot.executionMode);
   renderLiveReadiness(data.liveReadiness || fallbackSnapshot.liveReadiness);
+  renderGreenFlag(data.greenFlag || fallbackSnapshot.greenFlag);
   renderLiveAuto(data.liveAuto || fallbackSnapshot.liveAuto);
   renderBeastMode(data.beastMode || fallbackSnapshot.beastMode);
   renderDemoLimits(data.demoLimits || fallbackSnapshot.demoLimits);
@@ -527,6 +544,19 @@ function renderTargetProgress(period, item) {
   copy.textContent = `${money.format(item.netPnl || 0)} / ${money.format(item.target || 0)} (${pct.format(item.percent || 0)})`;
   fill.style.width = `${Math.min(percent, 1) * 100}%`;
   fill.classList.toggle("complete", percent >= 1);
+}
+
+function renderGreenFlag(report) {
+  setText("green-flag-status", String(report.status || "building_evidence").replaceAll("_", " ").toUpperCase());
+  setText("green-flag-score", `${Number(report.score || 0).toFixed(0)}/100`);
+  setText("green-flag-trades", `${report.closed_trades || 0} closed / ${report.recent_trades || 0} recent`);
+  setText("green-flag-protection", `${pct.format(report.protected_trade_rate || 0)} SL / ${pct.format(report.take_profit_rate || 0)} TP`);
+  setText("green-flag-recent", `${pct.format(report.recent_win_rate || 0)} win / PF ${Number(report.recent_profit_factor || 0).toFixed(2)} / ${Number(report.recent_net_r || 0).toFixed(2)}R`);
+  const reasons = report.reasons || [];
+  const checklist = report.checklist || [];
+  document.getElementById("green-flag-list").innerHTML = reasons.length
+    ? reasons.map((reason) => `<li class="blocked">${reason}</li>`).join("")
+    : checklist.slice(0, 4).map((item) => `<li>${item}</li>`).join("");
 }
 
 function renderEdgeValidation(report) {

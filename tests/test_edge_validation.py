@@ -47,3 +47,29 @@ def test_edge_validation_passes_strong_demo_history() -> None:
     assert report.status == "passed"
     assert report.net_r >= 2
     assert report.profit_factor >= 1.2
+
+
+def test_edge_validation_excludes_live_and_unknown_mt5_history() -> None:
+    config = ValidationConfig(
+        min_demo_trades=2,
+        min_demo_days=2,
+        min_profit_factor=1.0,
+        min_net_r=1.0,
+        min_win_rate=0.5,
+        max_drawdown_r=3,
+    )
+    demo_one = _position(1, 0.02, "2026-01-01T10:00:00+00:00")
+    demo_one["metadata"] = {"source": "mt5", "comment": "PANTHER demo incubation"}
+    demo_two = _position(2, 0.02, "2026-01-02T10:00:00+00:00")
+    demo_two["metadata"] = {"evidence_mode": "demo", "source": "mt5"}
+    live = _position(3, -1.0, "2026-01-03T10:00:00+00:00")
+    live["metadata"] = {"source": "mt5", "comment": "PANTHER live auto"}
+    unknown = _position(4, -1.0, "2026-01-04T10:00:00+00:00")
+    unknown["metadata"] = {"source": "mt5", "comment": "manual trade"}
+
+    report = EdgeValidationGate(config).evaluate([demo_one, demo_two, live, unknown])
+
+    assert report.passed
+    assert report.closed_trades == 2
+    assert report.trading_days == 2
+    assert report.losses == 0

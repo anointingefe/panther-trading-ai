@@ -87,6 +87,9 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/validation/edge":
             self._send_json({"edgeValidation": self._edge_validation()})
             return
+        if path == "/api/live/green-flag":
+            self._send_json({"greenFlag": self._green_flag()})
+            return
         if path == "/api/learning":
             query = parse_qs(parsed.query)
             symbol = query.get("symbol", ["EURUSD"])[0].upper()
@@ -345,12 +348,15 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
     ) -> dict:
         config = load_config(PROJECT_ROOT / "config/demo.yaml")
         edge_validation = self._edge_validation()
+        broker = broker_status()
+        green_flag = self._green_flag(edge_validation=edge_validation, broker=broker)
         readiness = LiveTradingGate(config.execution).readiness(
-            broker_status=broker_status(),
+            broker_status=broker,
             approval_status=approval_status,
             requested_volume=requested_volume,
             unlock_phrase=unlock_phrase,
             edge_validation_status=edge_validation["status"],
+            green_flag_status=green_flag["status"],
         )
         return {
             "enabled": readiness.enabled,
@@ -362,6 +368,13 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
     def _edge_validation(self) -> dict:
         config = load_config(PROJECT_ROOT / "config/demo.yaml")
         return EdgeValidationGate(config.validation).evaluate(POSITIONS.latest(limit=1000)).to_dict()
+
+    def _green_flag(self, edge_validation: dict | None = None, broker: dict | None = None) -> dict:
+        config = load_config(PROJECT_ROOT / "config/demo.yaml")
+        positions = POSITIONS.latest(limit=1000)
+        edge = edge_validation or EdgeValidationGate(config.validation).evaluate(positions).to_dict()
+        status = broker if broker is not None else broker_status()
+        return RealMoneyGreenFlag(config).evaluate(positions, edge, status).to_dict()
 
     def _learning_report(self, symbol: str, timeframe: str) -> dict:
         config = load_config(PROJECT_ROOT / "config/demo.yaml")

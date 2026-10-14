@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from panther_trading.evidence import classify_imported_evidence
 from panther_trading.models import ClosedTrade
 
 
@@ -88,6 +89,7 @@ class PaperPositionBook:
                 "order_message": entry.get("order_message"),
                 "strategy": strategy_name,
                 "strategy_gate": strategy_gate,
+                "evidence_mode": "paper",
             },
         )
         payload = position.__dict__
@@ -161,6 +163,7 @@ class PaperPositionBook:
                 "broker_order_id": trade.broker_order_id,
                 "comment": trade.comment,
                 "verified": True,
+                "evidence_mode": classify_imported_evidence(trade.source, trade.comment),
             },
         )
         payload = position.__dict__
