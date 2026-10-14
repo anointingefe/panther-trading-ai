@@ -26,6 +26,7 @@ def test_position_book_opens_approved_demo_position(tmp_path) -> None:
 
     assert position["status"] == "open"
     assert position["journal_entry_id"] == "sig-test"
+    assert position["metadata"]["evidence_mode"] == "paper"
     assert book.open_positions()[0]["id"] == position["id"]
 
 
@@ -119,4 +120,29 @@ def test_position_book_imports_verified_closed_trade_once(tmp_path) -> None:
     assert first["id"] == second["id"]
     assert first["status"] == "closed"
     assert first["metadata"]["verified"] is True
+    assert first["metadata"]["evidence_mode"] == "demo"
     assert len(book.latest()) == 1
+
+
+def test_position_book_marks_live_mt5_history_as_non_demo_evidence(tmp_path) -> None:
+    book = PaperPositionBook(tmp_path / "positions.jsonl")
+    trade = ClosedTrade(
+        external_id="mt5-live-1",
+        source="mt5",
+        symbol="EURUSD",
+        side=SignalSide.BUY,
+        volume=0.1,
+        entry=1.1,
+        stop_loss=1.09,
+        take_profit=1.12,
+        close_price=1.115,
+        pnl=0.0015,
+        opened_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        closed_at=datetime(2026, 10, 1, 1, tzinfo=timezone.utc),
+        broker_order_id="9003",
+        comment="PANTHER live auto",
+    )
+
+    position = book.import_closed_trade(trade)
+
+    assert position["metadata"]["evidence_mode"] == "live"
