@@ -16,12 +16,16 @@ from panther_trading.config import load_config
 from panther_trading.data import StaticSentimentCollector
 from panther_trading.demo_auto import DemoAutoTrader
 from panther_trading.execution import ExecutionEngine
+from panther_trading.execution_green_flag import ExecutionGreenFlag
 from panther_trading.goals import GoalTracker
 from panther_trading.green_flag import RealMoneyGreenFlag
 from panther_trading.live_guard import LiveTradingGate
+from panther_trading.live_ledger import LivePositionLedger
 from panther_trading.models import OrderRequest, OrderStatus, SignalSide, TradeSignal
 from panther_trading.positions import PaperPositionBook
+from panther_trading.reconciliation import BrokerReconciler
 from panther_trading.risk import RiskManager
+from panther_trading.shadow_execution import DEFAULT_LIVE_LEDGER, DEFAULT_SHADOW_STATE, ShadowExecutionStore
 from panther_trading.strategies import SmaSentimentStrategy
 from panther_trading.validation import EdgeValidationGate
 
@@ -83,7 +87,8 @@ class LiveAutoTrader:
 
     This is deliberately stricter than the demo runner. It exists so the live
     path can be tested and audited, but it refuses to place orders until the
-    live guard is fully armed.
+    strategy green flag, shadow execution green flag, and broker reconciliation
+    are all clean.
     """
 
     def __init__(
@@ -94,28 +99,35 @@ class LiveAutoTrader:
         goals_path: str | Path = DEFAULT_GOALS,
         beast_mode_path: str | Path = DEFAULT_BEAST_MODE,
         broker: Broker | None = None,
+        live_ledger_path: str | Path = DEFAULT_LIVE_LEDGER,
+        shadow_state_path: str | Path = DEFAULT_SHADOW_STATE,
     ) -> None:
         self.config_path = Path(config_path)
         self.positions_path = Path(positions_path)
         self.state_path = Path(state_path)
         self.goals_path = Path(goals_path)
         self.beast_mode_path = Path(beast_mode_path)
+        self.live_ledger_path = Path(live_ledger_path)
+        self.shadow_state_path = Path(shadow_state_path)
         self._broker = broker
         self._cycle_lock = Lock()
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def status(self) -> dict[str, Any]:
         config = load_config(self.config_path)
-        config = apply_beast_mode(config, BeastModeStore(self.beast_mode_path).load().enabled, self._positions())
         positions = self._positions()
+        config = apply_beast_mode(config, BeastModeStore(self.beast_mode_path).load().enabled, positions)
         edge = EdgeValidationGate(config.validation).evaluate(positions).to_dict()
-        green_flag = RealMoneyGreenFlag(config).evaluate(positions, edge, self._broker_status()).to_dict()
+        broker_status = self._broker_status()
+        green_flag = RealMoneyGreenFlag(config).evaluate(positions, edge, broker_status).to_dict()
+        execution_flag = self._execution_green_flag(config)
         readiness = LiveTradingGate(config.execution).readiness(
-            broker_status=self._broker_status(),
+            broker_status=broker_status,
             approval_status=None,
             requested_volume=config.execution.default_volume,
             edge_validation_status=edge["status"],
             green_flag_status=green_flag["status"],
+            execution_green_flag_status=execution_flag["status"],
             unlock_phrase=None,
         )
         payload = LiveAutoStatus(
@@ -130,8 +142,13 @@ class LiveAutoTrader:
             reasons=readiness.reasons,
         ).to_dict()
         latest = self.latest_state()
+        shadow_state = ShadowExecutionStore(
+            self.shadow_state_path, config.shadow_execution.max_samples_retained
+        ).state()
         payload["running"] = bool(latest.get("running", False))
         payload["lastCycle"] = latest.get("lastCycle")
+        payload["executionGreenFlag"] = execution_flag
+        payload["latestReconciliation"] = (shadow_state.get("reconciliationHistory") or [None])[-1]
         return payload
 
     def latest_state(self) -> dict[str, Any]:
@@ -168,6 +185,16 @@ class LiveAutoTrader:
             self._write_state(cycle)
             return cycle
 
+        reconciliation = self._reconcile(broker)
+        if not reconciliation["clean"]:
+            cycle = self._blocked_cycle(
+                started_at,
+                str(broker_status.get("mode") or "unknown"),
+                f"Broker reconciliation failed with {reconciliation['mismatch_count']} mismatch(es).",
+            )
+            self._write_state(cycle)
+            return cycle
+
         equity = broker_status.get("equity")
         if equity is None or not math.isfinite(equity) or equity <= 0:
             cycle = self._blocked_cycle(started_at, str(broker_status.get("mode") or "unknown"), "Broker equity is unavailable or invalid.")
@@ -176,12 +203,14 @@ class LiveAutoTrader:
         config = replace(config, risk=replace(config.risk, account_equity=equity))
         requested_volume = min(config.demo_auto.demo_order_volume, config.execution.max_live_volume)
         green_flag = RealMoneyGreenFlag(config).evaluate(positions, edge, broker_status).to_dict()
+        execution_flag = self._execution_green_flag(config)
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=broker_status,
             approval_status=None,
             requested_volume=requested_volume,
             edge_validation_status=edge["status"],
             green_flag_status=green_flag["status"],
+            execution_green_flag_status=execution_flag["status"],
             unlock_phrase=unlock_phrase,
         )
         if not readiness.armed:
@@ -238,14 +267,28 @@ class LiveAutoTrader:
         positions = self._positions()
         config = apply_beast_mode(config, BeastModeStore(self.beast_mode_path).load().enabled, positions)
         edge = EdgeValidationGate(config.validation).evaluate(positions).to_dict()
-        broker_status = self._broker_status("mt5")
+        try:
+            broker = self._broker or create_broker("mt5")
+            broker_status = self._broker_status_from_broker(broker)
+        except Exception as exc:
+            return {"status": "blocked", "message": f"Broker setup failed: {exc}", "brokerOrderId": None}
+        reconciliation = self._reconcile(broker)
+        if not reconciliation["clean"]:
+            return {
+                "status": "blocked",
+                "message": "Live execution refused: broker reconciliation is not clean.",
+                "reasons": [f"{reconciliation['mismatch_count']} broker mismatch(es) require resolution."],
+                "brokerOrderId": None,
+            }
         green_flag = RealMoneyGreenFlag(config).evaluate(positions, edge, broker_status).to_dict()
+        execution_flag = self._execution_green_flag(config)
         readiness = LiveTradingGate(config.execution).readiness(
             broker_status=broker_status,
             approval_status=str(journal_entry.get("approval_status")),
             requested_volume=config.execution.default_volume,
             edge_validation_status=edge["status"],
             green_flag_status=green_flag["status"],
+            execution_green_flag_status=execution_flag["status"],
             unlock_phrase=unlock_phrase,
         )
         if not readiness.armed:
@@ -265,7 +308,8 @@ class LiveAutoTrader:
             rationale=tuple(journal_entry.get("rationale") or ()),
             generated_at=datetime.now(timezone.utc),
         )
-        broker = self._broker or create_broker("mt5")
+        if self._ledger().has_recent_duplicate(signal):
+            return {"status": "blocked", "message": "Duplicate live signal is already active in the Panther ledger.", "brokerOrderId": None}
         equity = broker.get_status().equity
         if equity is None or not math.isfinite(equity) or equity <= 0:
             return {"status": "blocked", "message": "Broker equity is unavailable or invalid.", "brokerOrderId": None}
@@ -282,6 +326,8 @@ class LiveAutoTrader:
         if volume <= 0:
             return {"status": "blocked", "message": "Live execution refused: calculated volume is zero.", "brokerOrderId": None}
         result = ExecutionEngine(broker, RiskManager(config.risk), config.execution).execute(signal, volume=volume)
+        if result.status == OrderStatus.ACCEPTED:
+            self._ledger().record_accepted(signal, volume, result, "PANTHER live trade")
         return {"status": result.status.value, "message": result.message, "brokerOrderId": result.broker_order_id}
 
     def _evaluate_symbol(
@@ -323,11 +369,14 @@ class LiveAutoTrader:
         )
         if not risk.allowed:
             return self._blocked(symbol, signal.side.value, signal.confidence, risk.reason, edge_probability=edge_probability)
+        if self._ledger().has_recent_duplicate(signal):
+            return self._blocked(symbol, signal.side.value, signal.confidence, "Duplicate live signal is already active in the Panther ledger", edge_probability=edge_probability)
 
         volume = self._live_volume(config, broker, signal, goal_pressure)
         if volume <= 0:
             return self._blocked(symbol, signal.side.value, signal.confidence, "Calculated live volume is zero", edge_probability=edge_probability)
 
+        comment = "PANTHER live auto"
         result = broker.place_order(
             OrderRequest(
                 symbol=symbol,
@@ -336,10 +385,12 @@ class LiveAutoTrader:
                 entry=signal.entry,
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit,
-                comment="PANTHER live auto",
+                comment=comment,
             )
         )
         action = "placed" if result.status == OrderStatus.ACCEPTED else "blocked"
+        if action == "placed":
+            self._ledger().record_accepted(signal, volume, result, comment)
         return LiveAutoDecision(
             symbol=symbol,
             action=action,
@@ -379,6 +430,18 @@ class LiveAutoTrader:
 
     def _positions(self) -> list[dict[str, Any]]:
         return PaperPositionBook(self.positions_path).latest(limit=1000) if self.positions_path.exists() else []
+
+    def _ledger(self) -> LivePositionLedger:
+        return LivePositionLedger(self.live_ledger_path)
+
+    def _reconcile(self, broker: Broker) -> dict[str, Any]:
+        return BrokerReconciler().reconcile(self._ledger(), broker).to_dict()
+
+    def _execution_green_flag(self, config: Any) -> dict[str, Any]:
+        state = ShadowExecutionStore(
+            self.shadow_state_path, config.shadow_execution.max_samples_retained
+        ).state()
+        return ExecutionGreenFlag(config).evaluate(state).to_dict()
 
     def _blocked_cycle(self, started_at: datetime, broker_mode: str, reason: str) -> LiveAutoCycle:
         return LiveAutoCycle(
