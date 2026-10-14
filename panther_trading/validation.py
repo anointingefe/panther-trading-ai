@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from panther_trading.config import ValidationConfig
+from panther_trading.evidence import is_demo_evidence
 
 
 @dataclass(frozen=True)
@@ -35,9 +36,14 @@ class EdgeValidationGate:
         """Evaluate only completed demo positions using stop-normalized returns.
 
         Open positions are intentionally excluded: an unfinished trade cannot
-        prove strategy edge and must never help unlock live execution.
+        prove strategy edge and must never help unlock live execution. Imported
+        broker history must also be positively identified as demo evidence.
         """
-        closed = [position for position in positions if position.get("status") == "closed"]
+        closed = [
+            position
+            for position in positions
+            if position.get("status") == "closed" and is_demo_evidence(position)
+        ]
         r_values = [self._position_r(position) for position in closed]
         wins = len([value for value in r_values if value > 0])
         losses = len([value for value in r_values if value < 0])
