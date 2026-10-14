@@ -83,8 +83,19 @@ class LiveScoutConfig:
     ticket_max_age_seconds: int = 120
     allowed_account_modes: tuple[str, ...] = ("demo", "contest", "real")
     model_max_open_positions: int = 10
-    model_max_portfolio_risk_pct: float = 3.0
-    model_max_exposure_bucket_risk_pct: float = 1.5
+    model_max_portfolio_risk_pct: float = 2.5
+    model_max_exposure_bucket_risk_pct: float = 1.25
+    mandate_min_confidence: float = 0.78
+    mandate_min_edge_probability: float = 0.62
+    mandate_min_learning_quality: float = 0.65
+    mandate_max_risk_per_trade_pct: float = 0.40
+    mandate_daily_loss_stop_pct: float = 2.0
+    mandate_recent_window_trades: int = 20
+    mandate_adaptive_min_samples: int = 8
+    mandate_degraded_win_rate: float = 0.45
+    mandate_confidence_tighten_step: float = 0.04
+    mandate_edge_tighten_step: float = 0.03
+    mandate_learning_tighten_step: float = 0.05
 
 
 @dataclass(frozen=True)
