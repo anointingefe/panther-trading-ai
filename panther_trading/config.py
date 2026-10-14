@@ -73,6 +73,18 @@ class DemoAutoConfig:
 
 
 @dataclass(frozen=True)
+class LiveScoutConfig:
+    enabled: bool = True
+    interval_seconds: int = 30
+    max_symbols_per_cycle: int = 96
+    max_candidates_per_cycle: int = 12
+    history_sync_days: int = 30
+    learning_min_segment_samples: int = 6
+    ticket_max_age_seconds: int = 120
+    allowed_account_modes: tuple[str, ...] = ("demo", "contest", "real")
+
+
+@dataclass(frozen=True)
 class ValidationConfig:
     min_demo_trades: int = 30
     min_demo_days: int = 14
@@ -120,6 +132,7 @@ class PantherConfig:
     strategy: StrategyConfig
     execution: ExecutionConfig
     demo_auto: DemoAutoConfig
+    live_scout: LiveScoutConfig
     validation: ValidationConfig
     beast_mode: BeastModeConfig
     shadow_execution: ShadowExecutionConfig = ShadowExecutionConfig()
@@ -133,12 +146,16 @@ def load_config(path: str | Path) -> PantherConfig:
     demo_auto = raw.get("demo_auto", {})
     demo_auto_modes = demo_auto.get("allowed_account_modes", ("demo", "contest", "paper"))
     demo_auto["allowed_account_modes"] = tuple(demo_auto_modes)
+    live_scout = raw.get("live_scout", {})
+    live_scout_modes = live_scout.get("allowed_account_modes", ("demo", "contest", "real"))
+    live_scout["allowed_account_modes"] = tuple(live_scout_modes)
     return PantherConfig(
         app=AppConfig(**_section(raw, "app")),
         risk=RiskConfig(**_section(raw, "risk")),
         strategy=StrategyConfig(**_section(raw, "strategy")),
         execution=ExecutionConfig(**execution),
         demo_auto=DemoAutoConfig(**demo_auto),
+        live_scout=LiveScoutConfig(**live_scout),
         validation=ValidationConfig(**raw.get("validation", {})),
         beast_mode=BeastModeConfig(**raw.get("beast_mode", {})),
         shadow_execution=ShadowExecutionConfig(**raw.get("shadow_execution", {})),
