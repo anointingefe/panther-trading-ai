@@ -41,7 +41,11 @@ class BrokerReconciler:
     def reconcile(self, ledger: LivePositionLedger, broker: Any) -> ReconciliationReport:
         errors: list[str] = []
         try:
-            broker_open = list(broker.open_positions())
+            broker_open = [
+                position
+                for position in broker.open_positions()
+                if self._is_live_panther_position(position)
+            ]
         except Exception as exc:
             broker_open = []
             errors.append(f"Open-position reconciliation failed: {exc}")
@@ -49,7 +53,11 @@ class BrokerReconciler:
         closed_history: list[Any] = []
         if hasattr(broker, "get_closed_trades"):
             try:
-                closed_history = list(broker.get_closed_trades(days=30))
+                closed_history = [
+                    trade
+                    for trade in broker.get_closed_trades(days=30)
+                    if self._is_live_closed_trade(trade)
+                ]
             except Exception as exc:
                 errors.append(f"Closed-history reconciliation failed: {exc}")
 
@@ -103,6 +111,14 @@ class BrokerReconciler:
         )
         ledger.apply_reconciliation(report.to_dict())
         return report
+
+    def _is_live_panther_position(self, position: dict[str, Any]) -> bool:
+        metadata = position.get("metadata") or {}
+        comment = str(metadata.get("comment") or position.get("comment") or "").lower()
+        return "panther live" in comment
+
+    def _is_live_closed_trade(self, trade: Any) -> bool:
+        return "panther live" in str(getattr(trade, "comment", "") or "").lower()
 
     def _duplicate_order_ids(self, records: list[dict[str, Any]]) -> list[str]:
         seen: set[str] = set()
