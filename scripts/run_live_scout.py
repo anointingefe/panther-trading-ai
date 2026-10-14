@@ -4,7 +4,8 @@ import time
 from pathlib import Path
 
 from panther_trading.config import load_config
-from panther_trading.live_scout import LiveScoutRunner, LiveScoutTrader
+from panther_trading.live_scout import LiveScoutRunner
+from panther_trading.mandate_scout import BalancedMandateLiveScoutTrader
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,12 +14,12 @@ CONFIG_PATH = PROJECT_ROOT / "config/demo.yaml"
 
 def main() -> None:
     config = load_config(CONFIG_PATH)
-    trader = LiveScoutTrader(CONFIG_PATH)
+    trader = BalancedMandateLiveScoutTrader(CONFIG_PATH)
     runner = LiveScoutRunner(trader, interval_seconds=config.live_scout.interval_seconds)
     runner.start()
     print(
-        f"PANTHER live scout running every {config.live_scout.interval_seconds}s. "
-        "Live submissions still require explicit approval."
+        f"PANTHER balanced live scout running every {config.live_scout.interval_seconds}s. "
+        "Mandate-qualified tickets are labeled automatically; live submissions still require explicit approval."
     )
     try:
         while True:
