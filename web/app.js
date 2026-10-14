@@ -408,6 +408,10 @@ function formatPrice(value) {
 }
 
 function renderMarketStructure(structure) {
+  const chosenSymbol = document.getElementById("market-select").value;
+  const chosenTimeframe = document.getElementById("timeframe-select").value;
+  if (chosenSymbol && structure.symbol !== chosenSymbol) return;
+  if (structure.timeframe && structure.timeframe !== chosenTimeframe) return;
   const closes = (structure.closes || []).map(Number).filter((value) => Number.isFinite(value));
   const candles = (structure.candles || []).filter((candle) =>
     ["open", "high", "low", "close"].every((key) => Number.isFinite(Number(candle[key])))
@@ -437,6 +441,10 @@ function renderMarketStructure(structure) {
   }
   if (Number.isFinite(latest)) {
     lastChartClose = latest;
+  }
+  if (window.PantherChart) {
+    window.PantherChart.render(structure);
+    return;
   }
 
   const line = document.getElementById("structure-line");
@@ -1184,7 +1192,10 @@ async function refreshSnapshot(record = true, quiet = false) {
   }
 }
 
+let marketFeedBusy = false;
 async function refreshMarketStructure() {
+  if (marketFeedBusy) return;
+  marketFeedBusy = true;
   const selectedSymbol = document.getElementById("market-select").value || fallbackSnapshot.symbol;
   const selectedTimeframe = document.getElementById("timeframe-select").value || "M15";
   try {
@@ -1194,11 +1205,16 @@ async function refreshMarketStructure() {
       12000
     );
     const payload = await readJsonResponse(response, "Market feed unavailable");
-    renderMarketStructure(payload.marketStructure || fallbackSnapshot.marketStructure);
+    if (document.getElementById("market-select").value === selectedSymbol && document.getElementById("timeframe-select").value === selectedTimeframe) {
+      renderMarketStructure(payload.marketStructure || fallbackSnapshot.marketStructure);
+    }
   } catch (error) {
     const feed = document.getElementById("market-feed-status");
     feed.textContent = error instanceof Error ? "Feed paused" : "Feed unavailable";
     feed.classList.remove("up", "down");
+    if (window.PantherChart) window.PantherChart.pause();
+  } finally {
+    marketFeedBusy = false;
   }
 }
 
@@ -1496,7 +1512,7 @@ refreshDemoAuto();
 refreshLiveAuto();
 refreshGoals();
 refreshMarketStructure();
-setInterval(refreshMarketStructure, 5000);
+setInterval(refreshMarketStructure, 2000);
 setInterval(refreshDemoAuto, 15000);
 setInterval(refreshLiveAuto, 15000);
 setInterval(() => refreshSnapshot(false, true), 30000);

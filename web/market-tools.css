@@ -1,0 +1,29 @@
+#structure-chart { min-height: 400px; background: #101416; }
+#candle-chart { position: absolute; inset: 0; }
+#structure-chart > :not(#candle-chart) { display: none; }
+#structure-chart::before, #structure-chart::after { display: none; }
+#candle-chart svg { position: static; width: auto; height: auto; }
+.candle-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+#candle-readout { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chart-note { font-size: 11px; color: var(--muted); margin: 10px 0 0; }
+.chart-note a { color: var(--accent-2); }
+.trade-alert-panel { position: fixed; top: 100px; right: 24px; z-index: 25; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 130px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; box-shadow: 0 12px 40px #0006; }
+#trade-alert-history { list-style: none; padding: 0; }
+.trade-event { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.trade-event strong, .trade-event small { display: block; }
+.trade-event small { color: var(--muted); }
+.trade-event.win strong { color: var(--accent); }
+.trade-event.loss strong { color: var(--danger); }
+#trade-toasts { position: fixed; bottom: 24px; right: 24px; width: min(380px, calc(100vw - 32px)); z-index: 30; display: grid; gap: 10px; pointer-events: none; }
+.trade-toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent-2); border-radius: 6px; padding: 16px; box-shadow: 0 8px 24px #0006; pointer-events: auto; }
+.trade-toast button { float: right; padding: 4px 8px; min-height: 32px; margin-left: 8px; }
+.trade-toast strong, .trade-toast span { display: block; }
+.trade-toast.win { border-left-color: var(--accent); }
+.trade-toast.loss { border-left-color: var(--danger); }
+#trade-alert-status { color: var(--muted); font-size: 12px; margin-top: 14px; }
+@media (max-width: 680px) {
+  #structure-chart { min-height: 320px; }
+  #run-scan { grid-column: auto; }
+  #trade-toasts { right: 16px; bottom: 16px; }
+  .trade-alert-panel { top: 116px; right: 16px; max-height: calc(100dvh - 140px); }
+}
