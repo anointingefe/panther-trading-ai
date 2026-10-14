@@ -31,6 +31,7 @@ from panther_trading.positions import PaperPositionBook
 from panther_trading.research import StrategyResearchLab
 from panther_trading.brokers import create_broker
 from panther_trading.validation import EdgeValidationGate
+from panther_trading.trade_events import collect_trade_events
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -62,6 +63,13 @@ class PantherRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         if path == "/api/health":
             self._send_json({"status": "ok"})
+            return
+        if path == "/api/trade-events":
+            try:
+                cursor = parse_qs(parsed.query).get("since", [None])[0]
+                self._send_json(collect_trade_events(create_broker(), POSITIONS, float(cursor) if cursor is not None else None))
+            except (ValueError, RuntimeError) as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/markets":
             self._send_json({"markets": market_universe()})

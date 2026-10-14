@@ -237,6 +237,10 @@ def build_market_structure_snapshot(
         market_source,
     )
     structure = _market_structure(active_symbol, active_timeframe, candles, source)
+    if source == "mt5" and hasattr(market_broker, "mt5"):
+        info = market_broker.mt5.symbol_info(active_symbol)
+        if info is not None:
+            structure["digits"] = int(info.digits)
     structure["errors"] = [item for item in (market_error, candle_error) if item]
     return structure
 
@@ -381,7 +385,7 @@ def _advisor_suite(
 
 
 def _market_structure(symbol: str, timeframe: str, candles: list[Candle], source: str) -> dict[str, Any]:
-    recent = candles[-60:]
+    recent = candles[-500:]
     closes = [candle.close for candle in recent]
     highs = [candle.high for candle in recent]
     lows = [candle.low for candle in recent]
@@ -402,10 +406,10 @@ def _market_structure(symbol: str, timeframe: str, candles: list[Candle], source
         "candles": [
             {
                 "time": candle.time.isoformat(),
-                "open": round(candle.open, 6),
-                "high": round(candle.high, 6),
-                "low": round(candle.low, 6),
-                "close": round(candle.close, 6),
+                "open": candle.open,
+                "high": candle.high,
+                "low": candle.low,
+                "close": candle.close,
                 "volume": round(candle.volume, 6),
             }
             for candle in recent
