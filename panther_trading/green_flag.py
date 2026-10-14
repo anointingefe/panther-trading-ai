@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from panther_trading.config import PantherConfig
+from panther_trading.evidence import is_demo_evidence
 
 
 @dataclass(frozen=True)
@@ -55,7 +56,11 @@ class RealMoneyGreenFlag:
         edge_validation: dict[str, Any],
         broker_status: dict[str, Any] | None = None,
     ) -> GreenFlagReport:
-        closed = [position for position in positions if position.get("status") == "closed"]
+        closed = [
+            position
+            for position in positions
+            if position.get("status") == "closed" and is_demo_evidence(position)
+        ]
         closed = sorted(closed, key=self._closed_sort_key)
         recent = closed[-self.minimum_recent_trades :]
         r_values = [self._position_r(position) for position in recent]
