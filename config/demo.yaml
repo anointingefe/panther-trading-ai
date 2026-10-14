@@ -65,6 +65,20 @@ validation:
   min_win_rate: 0.35
   max_drawdown_r: 6.0
 
+shadow_execution:
+  enabled: true
+  interval_seconds: 30
+  max_symbols_per_cycle: 48
+  max_samples_retained: 1000
+  max_observation_minutes: 240
+  min_samples: 50
+  min_reconciliation_samples: 20
+  min_preflight_pass_rate: 0.99
+  min_quote_fresh_rate: 0.99
+  max_quote_age_seconds: 10.0
+  max_spread_to_stop_ratio: 0.25
+  max_reconciliation_mismatches: 0
+
 beast_mode:
   enabled: false
   demo_order_multiplier: 1.0

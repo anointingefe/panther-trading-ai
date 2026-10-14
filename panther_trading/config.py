@@ -98,6 +98,22 @@ class BeastModeConfig:
 
 
 @dataclass(frozen=True)
+class ShadowExecutionConfig:
+    enabled: bool = True
+    interval_seconds: int = 30
+    max_symbols_per_cycle: int = 48
+    max_samples_retained: int = 1000
+    max_observation_minutes: int = 240
+    min_samples: int = 50
+    min_reconciliation_samples: int = 20
+    min_preflight_pass_rate: float = 0.99
+    min_quote_fresh_rate: float = 0.99
+    max_quote_age_seconds: float = 10.0
+    max_spread_to_stop_ratio: float = 0.25
+    max_reconciliation_mismatches: int = 0
+
+
+@dataclass(frozen=True)
 class PantherConfig:
     app: AppConfig
     risk: RiskConfig
@@ -106,6 +122,7 @@ class PantherConfig:
     demo_auto: DemoAutoConfig
     validation: ValidationConfig
     beast_mode: BeastModeConfig
+    shadow_execution: ShadowExecutionConfig = ShadowExecutionConfig()
 
 
 def load_config(path: str | Path) -> PantherConfig:
@@ -124,6 +141,7 @@ def load_config(path: str | Path) -> PantherConfig:
         demo_auto=DemoAutoConfig(**demo_auto),
         validation=ValidationConfig(**raw.get("validation", {})),
         beast_mode=BeastModeConfig(**raw.get("beast_mode", {})),
+        shadow_execution=ShadowExecutionConfig(**raw.get("shadow_execution", {})),
     )
 
 
